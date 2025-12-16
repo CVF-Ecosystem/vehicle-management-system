@@ -14,10 +14,97 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import random
 import string
+import hashlib
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+
+# =============================================================================
+# SAFETY: PROTECT PRODUCTION DB DURING TESTS
+# =============================================================================
+
+
+def _resolve_db_path(db_file: str) -> Path:
+    """Resolve DB_FILE to an absolute path (repo-root relative if needed)."""
+    p = Path(db_file)
+    if p.is_absolute():
+        return p
+    return PROJECT_ROOT / p
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def protect_production_db(tmp_path_factory):
+    """Force tests to use a temp DB and detect accidental writes to the real DB.
+
+    Why:
+    - Code uses singleton DB connection (BaseManager) with default config.DB_FILE.
+    - If a test (or imported module) triggers BaseManager() without db_path, it may touch the real DB.
+    """
+    import config
+
+    # Track the real DB file hash (if exists) to detect accidental mutation.
+    real_db_path = _resolve_db_path(config.DB_FILE)
+    real_db_hash_before = None
+    if real_db_path.exists() and real_db_path.is_file():
+        try:
+            real_db_hash_before = _sha256_file(real_db_path)
+        except Exception:
+            real_db_hash_before = None
+
+    yield
+
+    # Teardown: detect if real DB was modified during tests.
+    if real_db_hash_before is not None and real_db_path.exists() and real_db_path.is_file():
+        try:
+            real_db_hash_after = _sha256_file(real_db_path)
+        except Exception:
+            real_db_hash_after = real_db_hash_before
+
+        assert real_db_hash_after == real_db_hash_before, (
+            "Production DB file was modified during tests. "
+            "This indicates a test accidentally used the real DB. "
+            f"Real DB path: {real_db_path}"
+        )
+
+
+@pytest.fixture(autouse=True)
+def force_test_db(tmp_path, monkeypatch):
+    """Per-test DB isolation.
+
+    Ensures any code path that uses config.DB_FILE will use a temp db under tmp_path.
+    This prevents accidental writes to the real DB and avoids cross-test pollution.
+    """
+    import config
+
+    test_db_path = tmp_path / "pytest_function.db"
+    monkeypatch.setattr(config, "DB_FILE", str(test_db_path), raising=False)
+
+    # Reset BaseManager singleton before and after each test.
+    try:
+        from database.base_manager import BaseManager
+        BaseManager._conn = None
+        BaseManager._db_path = None
+    except Exception:
+        pass
+
+    yield
+
+    try:
+        from database.base_manager import BaseManager
+        BaseManager._conn = None
+        BaseManager._db_path = None
+    except Exception:
+        pass
 
 
 # =============================================================================

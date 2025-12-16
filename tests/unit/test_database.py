@@ -92,18 +92,23 @@ class TestBaseManager:
         
         manager = BaseManager(str(db_path))
         
-        # Test valid identifiers
-        valid_names = ["vehicles", "drivers", "locations"]
-        for name in valid_names:
-            try:
-                manager._validate_identifier(name)
-            except ValueError:
-                pytest.fail(f"Valid identifier '{name}' should not raise error")
-        
-        # NOTE: SQL injection validation sẽ được implement ở Phase 0.2
-        # Hiện tại BaseManager không có _validate_identifier method
-        # Test này được skip cho đến khi có implementation
-        pytest.skip("SQL injection validation will be implemented in Phase 0.2")
+        # Table validation
+        for table_name in ["vehicles", "drivers", "locations"]:
+            assert manager._validate_identifier(table_name, "table") is True
+
+        # Column validation
+        for col_name in ["vin", "owner", "date_in", "location_id", "full_location_name"]:
+            assert manager._validate_identifier(col_name, "column") is True
+
+        # Invalid table names should be blocked
+        for bad_table in ["vehicles; DROP TABLE vehicles;", "sqlite_master", "vehicles--", ""]:
+            with pytest.raises(ValueError):
+                manager._validate_identifier(bad_table, "table")
+
+        # Invalid column names should be blocked
+        for bad_col in ["vin; DROP TABLE vehicles;", "vin--", "vin name", "1vin", "", "vin\nnew"]:
+            with pytest.raises(ValueError):
+                manager._validate_identifier(bad_col, "column")
 
 
 class TestVehicleManager:

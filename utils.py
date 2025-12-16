@@ -7,25 +7,74 @@ import json
 from datetime import datetime
 from config import CONFIG_FILE, LOGS_DIR, OWNER_MAP_FILE
 
-def setup_logging(gui_handler=None):
-    """Thiết lập hệ thống logging, ghi ra file và có thể cả giao diện."""
+# Module-level logger
+logger = logging.getLogger(__name__)
+
+def setup_logging(gui_handler=None, log_level=logging.INFO):
+    """
+    Thiết lập hệ thống logging chuẩn hóa.
+    
+    Features:
+    - Rotating file handler (1MB max, 5 backup files)
+    - Console handler cho development
+    - GUI handler cho hiển thị trong ứng dụng
+    - Format chuẩn với timestamp, level, module name, và message
+    
+    Args:
+        gui_handler: Optional handler để gửi logs đến GUI widget
+        log_level: Mức log mặc định (default: INFO)
+    """
     os.makedirs(LOGS_DIR, exist_ok=True)
     log_file_path = os.path.join(LOGS_DIR, "vehicle_app.log")
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(log_level)
+    
+    # Clear existing handlers để tránh duplicate
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    # Format chuẩn hóa: timestamp [LEVEL] module_name - message
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)8s] %(module)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
 
-    file_handler = RotatingFileHandler(log_file_path, maxBytes=1024*1024, backupCount=5, encoding='utf-8')
+    # File handler với rotation
+    file_handler = RotatingFileHandler(
+        log_file_path,
+        maxBytes=1024*1024,  # 1MB
+        backupCount=5,
+        encoding='utf-8'
+    )
     file_handler.setFormatter(formatter)
+    file_handler.setLevel(log_level)
     root_logger.addHandler(file_handler)
 
+    # GUI handler nếu có
     if gui_handler:
         gui_handler.setFormatter(formatter)
+        gui_handler.setLevel(log_level)
         root_logger.addHandler(gui_handler)
+    
+    logger.info("Logging system initialized")
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    Lấy logger cho một module cụ thể.
+    
+    Usage:
+        from utils import get_logger
+        logger = get_logger(__name__)
+        logger.info("Message")
+    
+    Args:
+        name: Tên module (thường là __name__)
+    
+    Returns:
+        Logger instance
+    """
+    return logging.getLogger(name)
 
 def load_config():
     """Đọc file cấu hình .ini hoặc tạo mới nếu chưa có."""

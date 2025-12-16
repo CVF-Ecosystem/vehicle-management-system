@@ -2,6 +2,8 @@
 import sqlite3
 import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from .base_manager import BaseManager
 from .location_manager import LocationManager
 from config import STATUS_IN_STOCK, STATUS_SHIPPED, STATUS_SHIPMENT_OPEN, STATUS_SHIPMENT_COMPLETED
@@ -24,7 +26,7 @@ class DispatchManager(BaseManager):
                 """, (driver_id, transport_vehicle_id, datetime.now().isoformat(), STATUS_SHIPMENT_OPEN))
                 return cursor.lastrowid
         except Exception as e:
-            logging.error(f"Lỗi khi tạo phiếu xuất: {e}")
+            logger.error(f"Lỗi khi tạo phiếu xuất: {e}")
             return None
 
     def add_vehicle_to_dispatch(self, vin, dispatch_id):
@@ -60,7 +62,7 @@ class DispatchManager(BaseManager):
                     dispatches[dispatch_id]['vehicles'].append(dict(row))
             return dispatches
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy chi tiết phiếu xuất đang mở: {e}")
+            logger.error(f"Lỗi khi lấy chi tiết phiếu xuất đang mở: {e}")
             return {}
 
     def cancel_dispatch(self, dispatch_id):
@@ -70,11 +72,11 @@ class DispatchManager(BaseManager):
             self.conn.execute("UPDATE vehicles SET dispatch_id = NULL WHERE dispatch_id = ?", (dispatch_id,))
             self.conn.execute("DELETE FROM dispatches WHERE id = ?", (dispatch_id,))
             self.commit_transaction()
-            logging.info(f"Đã hủy thành công phiếu xuất #{dispatch_id}.")
+            logger.info(f"Đã hủy thành công phiếu xuất #{dispatch_id}.")
             return {"success": True, "message": f"Đã hủy phiếu xuất #{dispatch_id}."}
         except Exception as e:
             self.rollback_transaction()
-            logging.error(f"Lỗi khi hủy phiếu xuất #{dispatch_id}: {e}")
+            logger.error(f"Lỗi khi hủy phiếu xuất #{dispatch_id}: {e}")
             return {"success": False, "message": str(e)}
 
     def complete_dispatch(self, dispatch_id):
@@ -112,11 +114,11 @@ class DispatchManager(BaseManager):
             if location_ids_to_free:
                 for loc_id in location_ids_to_free:
                     self.location_manager.set_location_occupied(loc_id, False)
-                logging.info(f"Đã giải phóng {len(location_ids_to_free)} vị trí cho phiếu xuất #{dispatch_id}.")
+                logger.info(f"Đã giải phóng {len(location_ids_to_free)} vị trí cho phiếu xuất #{dispatch_id}.")
 
             self.commit_transaction()
             return {"success": True, "message": f"Đã hoàn tất phiếu xuất, {num_updated} xe đã được xuất kho."}
         except Exception as e:
             self.rollback_transaction()
-            logging.error(f"Lỗi khi hoàn tất phiếu xuất {dispatch_id}: {e}")
+            logger.error(f"Lỗi khi hoàn tất phiếu xuất {dispatch_id}: {e}")
             return {"success": False, "message": str(e)}

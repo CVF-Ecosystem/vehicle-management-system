@@ -7,6 +7,9 @@ import re
 # Nhưng cho phép override qua constructor parameter
 import config
 
+# Module-level logger
+logger = logging.getLogger(__name__)
+
 # Whitelist các tên bảng và cột hợp lệ trong hệ thống
 VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations'}
 VALID_COLUMN_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
@@ -48,7 +51,7 @@ class BaseManager:
             BaseManager._conn = None
         
         # Tạo connection mới
-        logging.info(f"Đang tạo kết nối mới tới database: {target_db}")
+        logger.info(f"Đang tạo kết nối mới tới database: {target_db}")
         BaseManager._conn = sqlite3.connect(target_db, check_same_thread=False)
         BaseManager._conn.row_factory = sqlite3.Row
         BaseManager._db_path = target_db
@@ -61,7 +64,7 @@ class BaseManager:
         """
         Hàm trung tâm để tạo và nâng cấp tất cả các bảng trong CSDL.
         """
-        logging.info("Đang kiểm tra và cập nhật schema CSDL...")
+        logger.info("Đang kiểm tra và cập nhật schema CSDL...")
         with self.conn:
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS drivers (
@@ -130,7 +133,7 @@ class BaseManager:
             self._upgrade_table_if_needed('drivers', 'cccd', 'TEXT')
             self._create_indexes_if_needed()
 
-        logging.info("Schema CSDL đã được cập nhật.")
+        logger.info("Schema CSDL đã được cập nhật.")
 
     def _validate_identifier(self, name: str, identifier_type: str = "column") -> bool:
         """
@@ -169,14 +172,14 @@ class BaseManager:
             if not safe_definition_pattern.match(column_definition):
                 raise ValueError(f"Invalid column definition: '{column_definition}'")
         except ValueError as e:
-            logging.error(f"Security violation in _upgrade_table_if_needed: {e}")
+            logger.error(f"Security violation in _upgrade_table_if_needed: {e}")
             return
         
         cursor = self.conn.cursor()
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns = [info[1] for info in cursor.fetchall()]
         if column_name not in columns:
-            logging.info(f"Thêm cột '{column_name}' vào bảng '{table_name}'.")
+            logger.info(f"Thêm cột '{column_name}' vào bảng '{table_name}'.")
             self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
     def _create_indexes_if_needed(self):
@@ -211,7 +214,7 @@ class BaseManager:
             conn.row_factory = sqlite3.Row
             return conn
         except sqlite3.Error as e:
-            logging.error(f"Không thể tạo kết nối đến file CSDL: {db_file_path}. Lỗi: {e}")
+            logger.error(f"Không thể tạo kết nối đến file CSDL: {db_file_path}. Lỗi: {e}")
             return None
 
     @staticmethod
@@ -220,4 +223,4 @@ class BaseManager:
         if BaseManager._conn:
             BaseManager._conn.close()
             BaseManager._conn = None
-            logging.info("Đã đóng kết nối database.")
+            logger.info("Đã đóng kết nối database.")

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Phase 0: Stabilization & Test Baseline (in progress)
 
 ---
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Initial Release - Baseline V5.0
 
 #### Features
+
 - **Nhập bãi (Inbound)**: Nhập xe mới vào hệ thống với QR scan
 - **Xuất bãi lẻ (Outbound)**: Xuất từng xe riêng lẻ
 - **Xuất bãi nhiều (Dispatch)**: Tạo phiếu xuất cho nhiều xe
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Lưu trữ (Archive)**: Lưu trữ và tra cứu dữ liệu cũ
 
 #### Technical Stack
+
 - Python 3.x + CustomTkinter
 - SQLite Database
 - Multi-language support (VI/EN)
@@ -34,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - QR Code scanning
 
 #### Known Issues (to be fixed in Phase 0)
+
 - Logging format không chuẩn hóa
 - Một số error handling chưa đầy đủ
 - Chưa có test automation
