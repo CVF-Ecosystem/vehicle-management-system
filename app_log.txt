@@ -1,0 +1,41 @@
+2025-11-05 10:59:02,268 - INFO - --- Khởi động ứng dụng ---
+2025-11-05 10:59:02,680 - INFO - Giao diện ứng dụng đã sẵn sàng.
+2025-11-05 10:59:25,545 - INFO - Bắt đầu xử lý file: C:/Users/tiennm.tt/Desktop/SOFT QUAN LY XE 4.2/CAR DATA.xlsx
+2025-11-05 10:59:25,547 - INFO - Đang đọc file Excel: C:/Users/tiennm.tt/Desktop/SOFT QUAN LY XE 4.2/CAR DATA.xlsx
+2025-11-05 10:59:25,631 - INFO - Nạp template: C:/Users/tiennm.tt/Desktop/SOFT QUAN LY XE 4.2/PHIEU VC OTO MAU 2025.docx
+2025-11-05 10:59:26,012 - INFO - Bắt đầu render Word cho file CAR DATA.xlsx
+2025-11-05 10:59:26,322 - INFO - Lưu file Word vào: C:/Users/tiennm.tt/Desktop/SOFT QUAN LY XE 4.2/PhieuVanChuyen_CAR DATA.docx
+2025-11-05 10:59:26,401 - INFO - Đã tạo thành công file Word: C:/Users/tiennm.tt/Desktop/SOFT QUAN LY XE 4.2/PhieuVanChuyen_CAR DATA.docx
+2025-11-05 10:59:26,401 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
+2025-11-05 10:59:26,415 - INFO - Hoàn thành xử lý file đơn C:/Users/tiennm.tt/Desktop/SOFT QUAN LY XE 4.2/CAR DATA.xlsx thành công.
+2025-12-02 14:21:44,196 - INFO - --- Khởi động ứng dụng ---
+2025-12-02 14:21:44,501 - INFO - Giao diện ứng dụng đã sẵn sàng.
+2025-12-02 14:22:01,596 - INFO - Bắt đầu xử lý file: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/CAR DATA.xlsx
+2025-12-02 14:22:01,599 - INFO - Đang đọc file Excel: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/CAR DATA.xlsx
+2025-12-02 14:22:01,632 - INFO - Nạp template: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/PHIEU VC OTO MAU 2025.docx
+2025-12-02 14:22:01,972 - INFO - Bắt đầu render Word cho file CAR DATA.xlsx
+2025-12-02 14:22:02,299 - INFO - Lưu file Word vào: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/PhieuVanChuyen_CAR DATA.docx
+2025-12-02 14:22:02,364 - INFO - Đã tạo thành công file Word: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/PhieuVanChuyen_CAR DATA.docx
+2025-12-02 14:22:02,368 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
+2025-12-02 14:22:02,376 - INFO - Hoàn thành xử lý file đơn D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/CAR DATA.xlsx thành công.
+2025-12-02 14:27:22,125 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
+2025-12-02 14:27:22,126 - INFO - --- Đóng ứng dụng ---
+2025-12-02 14:35:49,086 - INFO - --- Khởi động ứng dụng ---
+2025-12-02 14:35:49,480 - INFO - Đã đọc cấu hình từ: config_phieuvc_v1.1.ini
+2025-12-02 14:35:49,561 - INFO - Giao diện ứng dụng đã sẵn sàng.
+2025-12-02 14:35:53,583 - INFO - Bắt đầu xử lý 1 file từ: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new
+2025-12-02 14:35:53,583 - INFO - Đang đọc file Excel: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\CAR DATA.xlsx
+2025-12-02 14:35:53,623 - INFO - Nạp template: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/PHIEU VC OTO MAU 2025.docx
+2025-12-02 14:35:53,983 - INFO - Bắt đầu render Word cho file CAR DATA.xlsx
+2025-12-02 14:35:54,313 - INFO - Lưu file Word vào: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\PhieuVanChuyen_CAR DATA_20251202_143553.docx
+2025-12-02 14:35:54,386 - INFO - Đã tạo thành công file Word: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\PhieuVanChuyen_CAR DATA_20251202_143553.docx
+2025-12-02 14:35:54,386 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
+2025-12-02 14:35:54,402 - INFO - Hoàn thành xử lý batch 1/1 file thành công.
+2025-12-02 14:36:34,677 - INFO - Bắt đầu xử lý 1 file từ: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new
+2025-12-02 14:36:34,679 - INFO - Đang đọc file Excel: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\CAR DATA.xlsx
+2025-12-02 14:36:34,748 - INFO - Nạp template: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new/PHIEU VC OTO MAU 2025.docx
+2025-12-02 14:36:35,092 - INFO - Bắt đầu render Word cho file CAR DATA.xlsx
+2025-12-02 14:36:35,409 - INFO - Lưu file Word vào: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\PhieuVanChuyen_CAR DATA_20251202_143634.docx
+2025-12-02 14:36:35,475 - INFO - Đã tạo thành công file Word: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\PhieuVanChuyen_CAR DATA_20251202_143634.docx
+2025-12-02 14:36:35,480 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
+2025-12-02 14:36:35,492 - INFO - Hoàn thành xử lý batch 1/1 file thành công.

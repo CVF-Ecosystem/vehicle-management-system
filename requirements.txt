@@ -1,0 +1,29 @@
+# requirements.txt
+#
+# Pinned versions to keep installs reproducible (tested with Python 3.11).
+
+# --- Core UI Framework ---
+customtkinter==5.2.2
+tkcalendar==1.6.1
+
+# --- Data Handling & Excel ---
+pandas==2.3.3
+openpyxl==3.1.5
+
+# --- Reporting & QR Code ---
+matplotlib==3.8.1
+seaborn==0.13.0
+reportlab==4.4.6
+qrcode[pil]==8.2
+Pillow==12.0.0
+python-docx==1.2.0
+docxtpl==0.20.2
+lxml==6.0.2
+Jinja2==3.1.6
+
+# --- Utilities ---
+Unidecode==1.4.0
+opencv-python==4.11.0.86
+thefuzz==0.22.1
+RapidFuzz==3.14.3
+python-Levenshtein==0.27.3
