@@ -2,7 +2,10 @@
 import sqlite3
 import logging
 import re
-from config import DB_FILE
+
+# Import config để lấy DB_FILE mặc định
+# Nhưng cho phép override qua constructor parameter
+import config
 
 # Whitelist các tên bảng và cột hợp lệ trong hệ thống
 VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations'}
@@ -12,20 +15,47 @@ class BaseManager:
     """
     Lớp cơ sở quản lý kết nối duy nhất đến cơ sở dữ liệu và chịu trách nhiệm
     thiết lập toàn bộ schema (cấu trúc) của CSDL.
+    
+    Hỗ trợ:
+    - Singleton pattern cho production (dùng config.DB_FILE)
+    - Override db_path cho testing
     """
     _conn = None
+    _db_path = None  # Track current DB path
 
-    def __init__(self):
-        if BaseManager._conn is None:
-            logging.info(f"Đang tạo kết nối mới tới database: {DB_FILE}")
-            BaseManager._conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-            BaseManager._conn.row_factory = sqlite3.Row
-            
+    def __init__(self, db_path: str = None):
+        """
+        Khởi tạo BaseManager.
+        
+        Args:
+            db_path: Đường dẫn tới database file. Nếu None, sử dụng config.DB_FILE.
+                     Nếu khác với connection hiện tại, sẽ tạo connection mới.
+        """
+        # Xác định db_path sẽ sử dụng
+        target_db = db_path if db_path is not None else config.DB_FILE
+        
+        # Nếu đã có connection và cùng db_path, reuse
+        if BaseManager._conn is not None and BaseManager._db_path == target_db:
             self.conn = BaseManager._conn
-            
-            self._setup_schema()
-        else:
-            self.conn = BaseManager._conn
+            return
+        
+        # Đóng connection cũ nếu có (chuyển sang DB khác)
+        if BaseManager._conn is not None:
+            try:
+                BaseManager._conn.close()
+            except Exception:
+                pass
+            BaseManager._conn = None
+        
+        # Tạo connection mới
+        logging.info(f"Đang tạo kết nối mới tới database: {target_db}")
+        BaseManager._conn = sqlite3.connect(target_db, check_same_thread=False)
+        BaseManager._conn.row_factory = sqlite3.Row
+        BaseManager._db_path = target_db
+        
+        self.conn = BaseManager._conn
+        
+        self._setup_schema()
 
     def _setup_schema(self):
         """

@@ -144,3 +144,73 @@ class DataNormalizer:
 # Tạo một instance duy nhất (Singleton pattern) để toàn bộ ứng dụng có thể
 # import và sử dụng mà không cần khởi tạo lại.
 normalizer = DataNormalizer()
+
+
+# =============================================================================
+# MODULE-LEVEL WRAPPER FUNCTIONS
+# =============================================================================
+# Các hàm này wrap methods của DataNormalizer để dễ import và sử dụng
+
+def validate_vin(vin: str, strict: bool = False) -> dict:
+    """
+    Kiểm tra tính hợp lệ của VIN (Vehicle Identification Number).
+    
+    Wrapper function cho DataNormalizer.validate_vin()
+    
+    Args:
+        vin: Số khung xe cần kiểm tra
+        strict: Nếu True, yêu cầu đúng 17 ký tự theo chuẩn ISO 3779
+               Nếu False, chấp nhận VIN từ 6-17 ký tự
+    
+    Returns:
+        dict với keys:
+            - valid (bool): VIN có hợp lệ hay không
+            - normalized (str): VIN đã được chuẩn hóa
+            - message (str): Thông báo lỗi nếu không hợp lệ
+    """
+    return normalizer.validate_vin(vin, strict)
+
+
+def normalize_vin(vin: str) -> str:
+    """
+    Chuẩn hóa VIN: loại bỏ khoảng trắng, chuyển uppercase.
+    
+    Wrapper function cho DataNormalizer.normalize_vin()
+    
+    Args:
+        vin: Số khung xe cần chuẩn hóa
+    
+    Returns:
+        str: VIN đã được chuẩn hóa
+    """
+    return normalizer.normalize_vin(vin)
+
+
+def normalize_owner(owner_name: str) -> str:
+    """
+    Chuẩn hóa tên chủ hàng một cách thông minh.
+    
+    Wrapper function cho DataNormalizer.normalize_owner()
+    
+    Args:
+        owner_name: Tên chủ hàng cần chuẩn hóa
+    
+    Returns:
+        str: Tên chủ hàng đã được chuẩn hóa
+    """
+    return normalizer.normalize_owner(owner_name)
+
+
+def normalize_vehicle_type(type_name: str) -> str:
+    """
+    Chuẩn hóa loại xe.
+    
+    Wrapper function cho DataNormalizer.normalize_vehicle_type()
+    
+    Args:
+        type_name: Loại xe cần chuẩn hóa
+    
+    Returns:
+        str: Loại xe đã được chuẩn hóa
+    """
+    return normalizer.normalize_vehicle_type(type_name)
