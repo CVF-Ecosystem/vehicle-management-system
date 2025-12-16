@@ -9,7 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Phase 0: Stabilization & Test Baseline (in progress)
+- **Phase 0.0**: Test infrastructure
+  - pytest + pytest-cov configuration (pytest.ini)
+  - Test fixtures for database isolation (conftest.py)
+  - Smoke tests for application imports and config
+  - Unit tests for VIN validation, owner normalization
+  - Database layer tests for BaseManager, VehicleManager, LocationManager
+  - Module-level wrapper functions in data_normalizer.py
+
+- **Phase 0.1**: Logging standardization
+  - Module-level loggers in all database managers
+  - Standardized log format with module name
+  - `get_logger()` utility function for consistent logger creation
+
+### Changed
+
+- BaseManager now accepts optional `db_path` parameter for testing
+- Enhanced `setup_logging()` with better documentation
+
+### Fixed
+
+- Test API compatibility with datetime objects for `add_vehicle()`
+- Correct method names in tests (get_all_free_locations vs get_available_locations)
 
 ---
 
