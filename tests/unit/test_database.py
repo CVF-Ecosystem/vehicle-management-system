@@ -338,18 +338,23 @@ class TestLocationManager:
     
     @pytest.mark.regression
     @pytest.mark.db
-    def test_occupy_and_release_location(self, sample_db):
+    def test_occupy_and_release_location(self):
         """Chiếm và giải phóng vị trí phải hoạt động đúng."""
-        db_path, _ = sample_db
-        
         from database.location_manager import LocationManager
         
         manager = LocationManager()
         
-        # Get available locations - sử dụng đúng method name
+        # Add test location using manager (which uses correct DB from force_test_db fixture)
+        locations_to_add = [
+            {'block': 'A', 'row': '1', 'slot': 1},
+            {'block': 'A', 'row': '1', 'slot': 2},
+        ]
+        success, added, skipped = manager.add_locations_batch(locations_to_add)
+        assert success and added >= 1, "Should add at least 1 location"
+        
+        # Get available locations
         available_before = manager.get_all_free_locations()
-        if not available_before:
-            pytest.skip("No available locations to test")
+        assert len(available_before) >= 1, "Should have at least 1 free location"
         
         location = available_before[0]
         location_id = location.get("id") or location[0]
@@ -357,9 +362,13 @@ class TestLocationManager:
         # Occupy
         manager.set_location_occupied(location_id, True)
         
+        # Check occupied
+        available_during = manager.get_all_free_locations()
+        assert len(available_during) == len(available_before) - 1, "One less free location"
+        
         # Release
         manager.set_location_occupied(location_id, False)
         
         # Verify released
         available_after = manager.get_all_free_locations()
-        assert len(available_after) >= len(available_before) - 1
+        assert len(available_after) == len(available_before), "Should be back to original count"
