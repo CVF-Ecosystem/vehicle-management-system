@@ -42,6 +42,9 @@ logs/*.log
 *.sqlite
 *.sqlite3
 
+# Legacy DB file (không có extension)
+vehicle_management_v3.0
+
 # Archives data (quá lớn để commit)
 archives/*.db
 

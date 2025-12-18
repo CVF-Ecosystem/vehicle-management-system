@@ -3,14 +3,78 @@ import sqlite3
 import logging
 from datetime import datetime, timezone
 import os
+
+logger = logging.getLogger(__name__)
 from .base_manager import BaseManager
 from .location_manager import LocationManager
 from config import DB_FILE, ARCHIVES_DIR, STATUS_IN_STOCK, STATUS_SHIPPED
+from data_normalizer import validate_vin, normalize_vin, normalize_owner, normalize_vehicle_type
+from exceptions import ValidationError, VINValidationError, DateValidationError, RequiredFieldError
 
 class VehicleManager(BaseManager):
     def __init__(self):
         super().__init__()
         self.location_manager = LocationManager()
+
+    def _validate_vehicle_data(self, vin: str, owner: str, date_in: datetime = None) -> dict:
+        """
+        Validate dữ liệu xe trước khi ghi vào database.
+        
+        Args:
+            vin: Số khung xe
+            owner: Tên chủ hàng
+            date_in: Ngày nhập (datetime object hoặc None)
+        
+        Returns:
+            dict: {
+                "valid": bool,
+                "vin": str (normalized),
+                "owner": str (normalized),
+                "errors": list[str]
+            }
+        
+        Raises:
+            VINValidationError: Nếu VIN không hợp lệ
+            RequiredFieldError: Nếu thiếu trường bắt buộc
+            DateValidationError: Nếu ngày không hợp lệ
+        """
+        errors = []
+        
+        # Validate VIN
+        vin_result = validate_vin(vin, strict=False)
+        if not vin_result["valid"]:
+            logger.warning(f"VIN validation failed: {vin} - {vin_result['message']}")
+            raise VINValidationError(
+                vin=vin,
+                message=vin_result["message"]
+            )
+        normalized_vin = vin_result["normalized"]
+        
+        # Validate Owner (required field)
+        if not owner or not owner.strip():
+            logger.warning(f"Owner validation failed: empty owner for VIN {normalized_vin}")
+            raise RequiredFieldError(
+                field_name="owner",
+                message="Tên chủ hàng không được để trống"
+            )
+        normalized_owner = normalize_owner(owner)
+        
+        # Validate date_in
+        if date_in is not None:
+            if not isinstance(date_in, datetime):
+                logger.warning(f"Date validation failed: date_in is not datetime object for VIN {normalized_vin}")
+                raise DateValidationError(
+                    field_name="date_in",
+                    value=str(date_in),
+                    expected_format="datetime object"
+                )
+        
+        return {
+            "valid": True,
+            "vin": normalized_vin,
+            "owner": normalized_owner,
+            "errors": []
+        }
 
     def _handle_existing_vin(self, vin, owner, vehicle_type, date_in, location_id):
         cursor = self.conn.cursor()
@@ -39,27 +103,60 @@ class VehicleManager(BaseManager):
         """
         Thêm một xe mới vào CSDL.
         
+        Args:
+            vin: Số khung xe (sẽ được validate và normalize)
+            owner: Tên chủ hàng (sẽ được validate và normalize)
+            vehicle_type: Loại xe (sẽ được normalize)
+            date_in: Ngày nhập (datetime object)
+            location_id: ID vị trí (có thể None)
+        
         Returns:
             dict: {"success": bool, "message": str}
         """
         try:
+            # === Phase 0.3: Data Integrity - Validate trước khi ghi DB ===
+            validated = self._validate_vehicle_data(vin, owner, date_in)
+            normalized_vin = validated["vin"]
+            normalized_owner = validated["owner"]
+            normalized_type = normalize_vehicle_type(vehicle_type) if vehicle_type else ""
+            
+            logger.debug(f"Validated data: VIN={normalized_vin}, Owner={normalized_owner}, Type={normalized_type}")
+            
             with self.conn:
                 self.conn.execute(
                     "INSERT INTO vehicles(vin, owner, vehicle_type, date_in, status, is_active, location_id) VALUES (?, ?, ?, ?, ?, 1, ?)",
-                    (vin, owner, vehicle_type, date_in.isoformat(), STATUS_IN_STOCK, location_id)
+                    (normalized_vin, normalized_owner, normalized_type, date_in.isoformat(), STATUS_IN_STOCK, location_id)
                 )
             return {"success": True, "message": "Thêm xe mới thành công."}
+        
+        except VINValidationError as e:
+            logger.warning(f"VIN validation error: {e}")
+            return {"success": False, "message": str(e)}
+        except RequiredFieldError as e:
+            logger.warning(f"Required field error: {e}")
+            return {"success": False, "message": str(e)}
+        except DateValidationError as e:
+            logger.warning(f"Date validation error: {e}")
+            return {"success": False, "message": str(e)}
         except sqlite3.IntegrityError as e:
-            logging.warning(f"VIN đã tồn tại, đang xử lý nhập lại: {vin}. Chi tiết: {e}")
-            return self._handle_existing_vin(vin, owner, vehicle_type, date_in, location_id)
+            logger.warning(f"VIN đã tồn tại, đang xử lý nhập lại: {vin}. Chi tiết: {e}")
+            # Sử dụng dữ liệu đã normalize cho việc nhập lại
+            validated = self._validate_vehicle_data(vin, owner, date_in)
+            return self._handle_existing_vin(
+                validated["vin"], 
+                validated["owner"], 
+                normalize_vehicle_type(vehicle_type) if vehicle_type else "",
+                date_in, 
+                location_id
+            )
         except sqlite3.OperationalError as e:
-            logging.error(f"Lỗi thao tác CSDL khi thêm xe {vin}: {e}")
+            logger.error(f"Lỗi thao tác CSDL khi thêm xe {vin}: {e}")
             return {"success": False, "message": f"Lỗi CSDL: {e}"}
         except sqlite3.DatabaseError as e:
-            logging.error(f"Lỗi database khi thêm xe {vin}: {e}")
+            logger.error(f"Lỗi database khi thêm xe {vin}: {e}")
             return {"success": False, "message": f"Lỗi database: {e}"}
         except Exception as e:
-            logging.exception(f"Lỗi không xác định khi thêm xe {vin}")
+            logger.exception(f"Lỗi không xác định khi thêm xe {vin}")
             return {"success": False, "message": f"Lỗi không xác định: {str(e)}"}
 
     def update_to_out(self, vin, date_out, transport_vehicle, driver_name):
@@ -82,13 +179,13 @@ class VehicleManager(BaseManager):
                 else:
                     return {"success": False, "message": "Không tìm thấy xe hoặc xe không ở trạng thái Tồn kho."}
         except sqlite3.OperationalError as e:
-            logging.error(f"Lỗi thao tác CSDL khi xuất xe {vin}: {e}")
+            logger.error(f"Lỗi thao tác CSDL khi xuất xe {vin}: {e}")
             return {"success": False, "message": f"Lỗi CSDL: {e}"}
         except sqlite3.DatabaseError as e:
-            logging.error(f"Lỗi database khi xuất xe {vin}: {e}")
+            logger.error(f"Lỗi database khi xuất xe {vin}: {e}")
             return {"success": False, "message": f"Lỗi database: {e}"}
         except Exception as e:
-            logging.exception(f"Lỗi khi xuất xe lẻ {vin}")
+            logger.exception(f"Lỗi khi xuất xe lẻ {vin}")
             return {"success": False, "message": f"Lỗi không xác định: {str(e)}"}
 
     def find_vehicle_in_stock(self, vin):
@@ -101,7 +198,7 @@ class VehicleManager(BaseManager):
             row = cur.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi tìm xe tồn kho theo VIN '{vin}': {e}")
+            logger.error(f"Lỗi khi tìm xe tồn kho theo VIN '{vin}': {e}")
             return None
 
     def get_in_stock(self, owner_filter=None, search_term=None, limit=100, offset=0):
@@ -141,7 +238,7 @@ class VehicleManager(BaseManager):
                 results.append(row_dict)
             return results
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách tồn kho (phân trang): {e}")
+            logger.error(f"Lỗi khi lấy danh sách tồn kho (phân trang): {e}")
             return []
 
     def get_in_stock_count(self, owner_filter=None, search_term=None):
@@ -161,7 +258,7 @@ class VehicleManager(BaseManager):
             count = cur.fetchone()[0]
             return count
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi đếm số xe tồn kho: {e}")
+            logger.error(f"Lỗi khi đếm số xe tồn kho: {e}")
             return 0
 
     def get_shipped_vehicles_history(self, start_date=None, end_date=None):
@@ -195,7 +292,7 @@ class VehicleManager(BaseManager):
                 results.append(row_dict)
             return results
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy lịch sử xuất kho: {e}")
+            logger.error(f"Lỗi khi lấy lịch sử xuất kho: {e}")
             return []
     # === HÀM ĐƯỢC VIẾT LẠI HOÀN TOÀN ===
     def get_summary_report_data(self, start_date, end_date):
@@ -258,7 +355,7 @@ class VehicleManager(BaseManager):
             return sorted(final_report, key=lambda x: x['owner'])
 
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy dữ liệu báo cáo tổng hợp: {e}")
+            logger.error(f"Lỗi khi lấy dữ liệu báo cáo tổng hợp: {e}")
             return []
 
     def get_distinct_owners(self):
@@ -268,7 +365,7 @@ class VehicleManager(BaseManager):
             cur.execute("SELECT DISTINCT owner FROM vehicles WHERE owner IS NOT NULL AND owner != '' AND is_active = 1 ORDER BY owner COLLATE NOCASE")
             return [row['owner'] for row in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách chủ hàng: {e}")
+            logger.error(f"Lỗi khi lấy danh sách chủ hàng: {e}")
             return []
 
     def get_distinct_vehicle_types(self, owner_filter=None):
@@ -285,7 +382,7 @@ class VehicleManager(BaseManager):
             cur.execute(query, params)
             return [row['vehicle_type'] for row in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách loại xe: {e}")
+            logger.error(f"Lỗi khi lấy danh sách loại xe: {e}")
             return []
 
     def get_distinct_owners_in_stock(self):
@@ -295,7 +392,7 @@ class VehicleManager(BaseManager):
             cur.execute("SELECT DISTINCT owner FROM vehicles WHERE status = ? AND owner IS NOT NULL AND owner != '' AND is_active = 1 ORDER BY owner COLLATE NOCASE", (STATUS_IN_STOCK,))
             return [row['owner'] for row in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách chủ hàng tồn kho: {e}")
+            logger.error(f"Lỗi khi lấy danh sách chủ hàng tồn kho: {e}")
             return []
 
     def get_distinct_vehicle_types_in_stock(self):
@@ -305,7 +402,7 @@ class VehicleManager(BaseManager):
             cur.execute("SELECT DISTINCT vehicle_type FROM vehicles WHERE status = ? AND vehicle_type IS NOT NULL AND vehicle_type != '' AND is_active = 1 ORDER BY vehicle_type COLLATE NOCASE", (STATUS_IN_STOCK,))
             return [row['vehicle_type'] for row in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách loại xe tồn kho: {e}")
+            logger.error(f"Lỗi khi lấy danh sách loại xe tồn kho: {e}")
             return []
 
     def update_vehicle_details(self, vin, owner, vehicle_type):
@@ -314,7 +411,7 @@ class VehicleManager(BaseManager):
                 self.conn.execute("UPDATE vehicles SET owner = ?, vehicle_type = ? WHERE vin = ? AND is_active = 1", (owner, vehicle_type, vin))
             return {"success": True, "message": "Cập nhật thành công."}
         except Exception as e:
-            logging.exception(f"Lỗi khi cập nhật chi tiết cho VIN {vin}")
+            logger.exception(f"Lỗi khi cập nhật chi tiết cho VIN {vin}")
             return {"success": False, "message": str(e)}
 
     def update_vin(self, old_vin, new_vin, owner, vehicle_type):
@@ -346,7 +443,7 @@ class VehicleManager(BaseManager):
             return {"success": False, "message": f"VIN mới '{new_vin}' đã tồn tại. Vui lòng chọn một VIN khác."}
         except Exception as e:
             self.rollback_transaction()
-            logging.exception(f"Lỗi khi cập nhật VIN từ {old_vin} sang {new_vin}")
+            logger.exception(f"Lỗi khi cập nhật VIN từ {old_vin} sang {new_vin}")
             return {"success": False, "message": str(e)}
 
     def soft_delete_vehicle(self, vin):
@@ -366,7 +463,7 @@ class VehicleManager(BaseManager):
                 return {"success": False, "message": "Không tìm thấy xe để xóa."}
         except Exception as e:
             self.rollback_transaction()
-            logging.exception(f"Lỗi khi xóa mềm VIN {vin}: {e}")
+            logger.exception(f"Lỗi khi xóa mềm VIN {vin}: {e}")
             return {"success": False, "message": str(e)}
 
     def get_vehicle_by_vin(self, vin):
@@ -377,7 +474,7 @@ class VehicleManager(BaseManager):
             row = cur.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy xe theo VIN '{vin}': {e}")
+            logger.error(f"Lỗi khi lấy xe theo VIN '{vin}': {e}")
             return None
 
     def search_all_vehicles(self, vin="", owner="", vehicle_type="", transport="", driver=""):
@@ -399,7 +496,7 @@ class VehicleManager(BaseManager):
             cur.execute(query, params)
             return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi tìm kiếm toàn cục: {e}")
+            logger.error(f"Lỗi khi tìm kiếm toàn cục: {e}")
             return []
 
     def swap_vehicle_location(self, vin, new_location_id):
@@ -418,11 +515,11 @@ class VehicleManager(BaseManager):
                 self.location_manager.set_location_occupied(old_location_id, False)
             
             self.commit_transaction()
-            logging.info(f"Đã di chuyển xe {vin} từ vị trí ID {old_location_id} sang {new_location_id}.")
+            logger.info(f"Đã di chuyển xe {vin} từ vị trí ID {old_location_id} sang {new_location_id}.")
             return {"success": True, "message": "Đảo vị trí thành công."}
         except Exception as e:
             self.rollback_transaction()
-            logging.error(f"Lỗi khi đảo vị trí cho xe {vin}: {e}")
+            logger.error(f"Lỗi khi đảo vị trí cho xe {vin}: {e}")
             return {"success": False, "message": f"Đã xảy ra lỗi: {e}"}
     def archive_shipped_vehicles(self, start_date, end_date):
         """
@@ -476,13 +573,13 @@ class VehicleManager(BaseManager):
             self.commit_transaction()
             archive_conn.commit()
 
-            logging.info(f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi vào file: {archive_db_path}")
+            logger.info(f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi vào file: {archive_db_path}")
             return {"success": True, "message": f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi.", "count": len(vins_to_delete)}
 
         except Exception as e:
             if self.conn: self.rollback_transaction()
             if archive_conn: archive_conn.rollback()
-            logging.exception("Lỗi trong quá trình lưu trữ dữ liệu.")
+            logger.exception("Lỗi trong quá trình lưu trữ dữ liệu.")
             return {"success": False, "message": f"Lỗi lưu trữ: {e}"}
         
         finally:
@@ -512,7 +609,7 @@ class VehicleManager(BaseManager):
             return {"success": True, "data": results, "message": f"Tìm thấy {len(results)} bản ghi."}
 
         except Exception as e:
-            logging.exception(f"Lỗi khi đọc file lưu trữ {archive_path}")
+            logger.exception(f"Lỗi khi đọc file lưu trữ {archive_path}")
             return {"success": False, "data": [], "message": str(e)}
         finally:
             if archive_conn:

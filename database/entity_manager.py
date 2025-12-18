@@ -1,6 +1,9 @@
 # database/entity_manager.py
 import sqlite3
 import logging
+
+logger = logging.getLogger(__name__)
+
 from .base_manager import BaseManager
 
 class EntityManager(BaseManager):
@@ -16,7 +19,7 @@ class EntityManager(BaseManager):
             cur.execute("SELECT * FROM drivers WHERE is_active = 1 ORDER BY name COLLATE NOCASE")
             return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách tài xế: {e}")
+            logger.error(f"Lỗi khi lấy danh sách tài xế: {e}")
             return []
 
     def add_driver(self, name, phone, cccd, notes):
@@ -37,7 +40,7 @@ class EntityManager(BaseManager):
                 return {"success": False, "message": f"Số CCCD '{cccd}' đã tồn tại."}
             return {"success": False, "message": f"Lỗi trùng lặp dữ liệu: {e}"}
         except Exception as e:
-            logging.error(f"Lỗi không xác định khi thêm tài xế: {e}")
+            logger.error(f"Lỗi không xác định khi thêm tài xế: {e}")
             return {"success": False, "message": str(e)}
 
     def update_driver(self, driver_id, name, phone, cccd, notes):
@@ -57,7 +60,7 @@ class EntityManager(BaseManager):
                 return {"success": False, "message": f"Số CCCD '{cccd}' đã tồn tại."}
             return {"success": False, "message": f"Lỗi trùng lặp dữ liệu: {e}"}
         except Exception as e:
-            logging.error(f"Lỗi không xác định khi cập nhật tài xế: {e}")
+            logger.error(f"Lỗi không xác định khi cập nhật tài xế: {e}")
             return {"success": False, "message": str(e)}
 
     def soft_delete_driver(self, driver_id):
@@ -67,7 +70,7 @@ class EntityManager(BaseManager):
                 self.conn.execute("UPDATE drivers SET is_active = 0 WHERE id=?", (driver_id,))
             return {"success": True, "message": "Xóa tài xế thành công."}
         except Exception as e:
-            logging.error(f"Lỗi khi xóa mềm tài xế: {e}")
+            logger.error(f"Lỗi khi xóa mềm tài xế: {e}")
             return {"success": False, "message": str(e)}
 
     def get_all_active_transport_vehicles(self):
@@ -77,7 +80,7 @@ class EntityManager(BaseManager):
             cur.execute("SELECT * FROM transport_vehicles WHERE is_active = 1 ORDER BY license_plate COLLATE NOCASE")
             return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách xe vận chuyển: {e}")
+            logger.error(f"Lỗi khi lấy danh sách xe vận chuyển: {e}")
             return []
 
     def add_transport_vehicle(self, license_plate, vehicle_type, notes):
@@ -89,7 +92,7 @@ class EntityManager(BaseManager):
         except sqlite3.IntegrityError:
             return {"success": False, "message": f"Biển số xe '{license_plate}' đã tồn tại."}
         except Exception as e:
-            logging.error(f"Lỗi không xác định khi thêm xe vận chuyển: {e}")
+            logger.error(f"Lỗi không xác định khi thêm xe vận chuyển: {e}")
             return {"success": False, "message": str(e)}
 
     def update_transport_vehicle(self, vehicle_id, license_plate, vehicle_type, notes):
@@ -101,7 +104,7 @@ class EntityManager(BaseManager):
         except sqlite3.IntegrityError:
             return {"success": False, "message": f"Biển số xe '{license_plate}' đã tồn tại."}
         except Exception as e:
-            logging.error(f"Lỗi không xác định khi cập nhật xe vận chuyển: {e}")
+            logger.error(f"Lỗi không xác định khi cập nhật xe vận chuyển: {e}")
             return {"success": False, "message": str(e)}
 
     def soft_delete_transport_vehicle(self, vehicle_id):
@@ -111,5 +114,5 @@ class EntityManager(BaseManager):
                 self.conn.execute("UPDATE transport_vehicles SET is_active = 0 WHERE id=?", (vehicle_id,))
             return {"success": True, "message": "Xóa xe vận chuyển thành công."}
         except Exception as e:
-            logging.error(f"Lỗi khi xóa mềm xe vận chuyển: {e}")
+            logger.error(f"Lỗi khi xóa mềm xe vận chuyển: {e}")
             return {"success": False, "message": str(e)}

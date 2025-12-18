@@ -1,6 +1,9 @@
 # database/location_manager.py
 import sqlite3
 import logging
+
+logger = logging.getLogger(__name__)
+
 from .base_manager import BaseManager
 
 class LocationManager(BaseManager):
@@ -40,7 +43,7 @@ class LocationManager(BaseManager):
                         skipped_count += 1
             return True, added_count, skipped_count
         except Exception as e:
-            logging.error(f"Lỗi khi thêm hàng loạt vị trí: {e}")
+            logger.error(f"Lỗi khi thêm hàng loạt vị trí: {e}")
             return False, 0, 0
 
     def get_all_free_locations(self):
@@ -50,7 +53,7 @@ class LocationManager(BaseManager):
             cur.execute("SELECT id, full_location_name FROM locations WHERE is_occupied = 0 ORDER BY block, row, slot")
             return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi lấy danh sách vị trí trống: {e}")
+            logger.error(f"Lỗi khi lấy danh sách vị trí trống: {e}")
             return []
 
     def get_next_available_location(self):
@@ -61,7 +64,7 @@ class LocationManager(BaseManager):
             row = cur.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi tìm vị trí trống tiếp theo: {e}")
+            logger.error(f"Lỗi khi tìm vị trí trống tiếp theo: {e}")
             return None
 
     def set_location_occupied(self, location_id, status: bool):
@@ -77,7 +80,7 @@ class LocationManager(BaseManager):
                 self.conn.execute("UPDATE locations SET is_occupied = ? WHERE id = ?", (1 if status else 0, location_id))
             return True
         except Exception as e:
-            logging.error(f"Lỗi khi cập nhật trạng thái cho location_id {location_id}: {e}")
+            logger.error(f"Lỗi khi cập nhật trạng thái cho location_id {location_id}: {e}")
             return False
 
     def find_location_by_name(self, full_name):
@@ -88,5 +91,5 @@ class LocationManager(BaseManager):
             row = cur.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            logging.error(f"Lỗi khi tìm vị trí theo tên '{full_name}': {e}")
+            logger.error(f"Lỗi khi tìm vị trí theo tên '{full_name}': {e}")
             return None

@@ -2,7 +2,19 @@
 import sqlite3
 import logging
 import re
-from config import DB_FILE
+
+# Import config để lấy DB_FILE mặc định
+# Nhưng cho phép override qua constructor parameter
+import config
+
+# Import custom exceptions
+from exceptions import (
+    DatabaseError, ConnectionError, SchemaError, IntegrityError,
+    SQLInjectionError, InvalidTableNameError
+)
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 # Whitelist các tên bảng và cột hợp lệ trong hệ thống
 VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations'}
@@ -12,26 +24,53 @@ class BaseManager:
     """
     Lớp cơ sở quản lý kết nối duy nhất đến cơ sở dữ liệu và chịu trách nhiệm
     thiết lập toàn bộ schema (cấu trúc) của CSDL.
+    
+    Hỗ trợ:
+    - Singleton pattern cho production (dùng config.DB_FILE)
+    - Override db_path cho testing
     """
     _conn = None
+    _db_path = None  # Track current DB path
 
-    def __init__(self):
-        if BaseManager._conn is None:
-            logging.info(f"Đang tạo kết nối mới tới database: {DB_FILE}")
-            BaseManager._conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-            BaseManager._conn.row_factory = sqlite3.Row
-            
+    def __init__(self, db_path: str = None):
+        """
+        Khởi tạo BaseManager.
+        
+        Args:
+            db_path: Đường dẫn tới database file. Nếu None, sử dụng config.DB_FILE.
+                     Nếu khác với connection hiện tại, sẽ tạo connection mới.
+        """
+        # Xác định db_path sẽ sử dụng
+        target_db = db_path if db_path is not None else config.DB_FILE
+        
+        # Nếu đã có connection và cùng db_path, reuse
+        if BaseManager._conn is not None and BaseManager._db_path == target_db:
             self.conn = BaseManager._conn
-            
-            self._setup_schema()
-        else:
-            self.conn = BaseManager._conn
+            return
+        
+        # Đóng connection cũ nếu có (chuyển sang DB khác)
+        if BaseManager._conn is not None:
+            try:
+                BaseManager._conn.close()
+            except Exception:
+                pass
+            BaseManager._conn = None
+        
+        # Tạo connection mới
+        logger.info(f"Đang tạo kết nối mới tới database: {target_db}")
+        BaseManager._conn = sqlite3.connect(target_db, check_same_thread=False)
+        BaseManager._conn.row_factory = sqlite3.Row
+        BaseManager._db_path = target_db
+        
+        self.conn = BaseManager._conn
+        
+        self._setup_schema()
 
     def _setup_schema(self):
         """
         Hàm trung tâm để tạo và nâng cấp tất cả các bảng trong CSDL.
         """
-        logging.info("Đang kiểm tra và cập nhật schema CSDL...")
+        logger.info("Đang kiểm tra và cập nhật schema CSDL...")
         with self.conn:
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS drivers (
@@ -100,7 +139,7 @@ class BaseManager:
             self._upgrade_table_if_needed('drivers', 'cccd', 'TEXT')
             self._create_indexes_if_needed()
 
-        logging.info("Schema CSDL đã được cập nhật.")
+        logger.info("Schema CSDL đã được cập nhật.")
 
     def _validate_identifier(self, name: str, identifier_type: str = "column") -> bool:
         """
@@ -114,17 +153,27 @@ class BaseManager:
             bool: True nếu hợp lệ
         
         Raises:
-            ValueError: Nếu identifier không hợp lệ
+            SQLInjectionError: Nếu identifier không hợp lệ
+            InvalidTableNameError: Nếu table name không có trong whitelist
         """
         if not name:
-            raise ValueError(f"{identifier_type.capitalize()} name cannot be empty")
+            raise SQLInjectionError(
+                f"{identifier_type.capitalize()} name cannot be empty",
+                input_value=""
+            )
         
         if identifier_type == "table":
             if name.lower() not in VALID_TABLE_NAMES:
-                raise ValueError(f"Invalid table name: '{name}'. Allowed tables: {VALID_TABLE_NAMES}")
+                raise InvalidTableNameError(
+                    table_name=name,
+                    valid_tables=list(VALID_TABLE_NAMES)
+                )
         
         if not VALID_COLUMN_PATTERN.match(name):
-            raise ValueError(f"Invalid {identifier_type} name: '{name}'. Must match pattern: [a-zA-Z_][a-zA-Z0-9_]*")
+            raise SQLInjectionError(
+                f"Invalid {identifier_type} name format",
+                input_value=name
+            )
         
         return True
 
@@ -137,16 +186,19 @@ class BaseManager:
             # Validate column_definition chỉ chứa các keywords an toàn
             safe_definition_pattern = re.compile(r'^[A-Z\s]+(\s+REFERENCES\s+[a-zA-Z_]+\([a-zA-Z_]+\))?$', re.IGNORECASE)
             if not safe_definition_pattern.match(column_definition):
-                raise ValueError(f"Invalid column definition: '{column_definition}'")
-        except ValueError as e:
-            logging.error(f"Security violation in _upgrade_table_if_needed: {e}")
+                raise SQLInjectionError(
+                    "Invalid column definition format",
+                    input_value=column_definition
+                )
+        except (SQLInjectionError, InvalidTableNameError) as e:
+            logger.error(f"Security violation in _upgrade_table_if_needed: {e}")
             return
         
         cursor = self.conn.cursor()
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns = [info[1] for info in cursor.fetchall()]
         if column_name not in columns:
-            logging.info(f"Thêm cột '{column_name}' vào bảng '{table_name}'.")
+            logger.info(f"Thêm cột '{column_name}' vào bảng '{table_name}'.")
             self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
     def _create_indexes_if_needed(self):
@@ -181,7 +233,7 @@ class BaseManager:
             conn.row_factory = sqlite3.Row
             return conn
         except sqlite3.Error as e:
-            logging.error(f"Không thể tạo kết nối đến file CSDL: {db_file_path}. Lỗi: {e}")
+            logger.error(f"Không thể tạo kết nối đến file CSDL: {db_file_path}. Lỗi: {e}")
             return None
 
     @staticmethod
@@ -190,4 +242,4 @@ class BaseManager:
         if BaseManager._conn:
             BaseManager._conn.close()
             BaseManager._conn = None
-            logging.info("Đã đóng kết nối database.")
+            logger.info("Đã đóng kết nối database.")
