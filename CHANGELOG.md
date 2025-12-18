@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [5.0.1] - 2024-12-19
+
+### Phase 0: Stabilization & Test Baseline
+
+#### Added
 
 - **Phase 0.0**: Test infrastructure
   - pytest + pytest-cov configuration (pytest.ini)
@@ -22,15 +26,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Standardized log format with module name
   - `get_logger()` utility function for consistent logger creation
 
-### Changed
+- **Phase 0.2**: Error handling
+  - Custom exception hierarchy in exceptions.py
+  - VehicleManagementError as base class
+  - DatabaseError, ValidationError, SecurityError subtrees
+  - SQLInjectionError, InvalidTableNameError for security
+  - VINValidationError, DateValidationError, RequiredFieldError for validation
+
+- **Phase 0.3**: Data integrity checks
+  - VIN validation before database write (6-17 chars, no I/O/Q)
+  - Owner field validation (non-empty required)
+  - Date format validation (DD/MM/YYYY or YYYY-MM-DD)
+  - Integration with VehicleManager.add_vehicle()
+
+- **Phase 0.4**: Test baseline
+  - 35 tests passing, 0 skipped, 0 failed
+  - 37% code coverage for database layer
+  - 82% coverage for data_normalizer module
+
+#### Changed
 
 - BaseManager now accepts optional `db_path` parameter for testing
+- BaseManager._validate_identifier() uses custom exceptions
 - Enhanced `setup_logging()` with better documentation
 
-### Fixed
+#### Fixed
 
 - Test API compatibility with datetime objects for `add_vehicle()`
 - Correct method names in tests (get_all_free_locations vs get_available_locations)
+- Location occupy/release test now works independently
 
 ---
 
