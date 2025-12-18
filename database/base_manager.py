@@ -7,6 +7,12 @@ import re
 # Nhưng cho phép override qua constructor parameter
 import config
 
+# Import custom exceptions
+from exceptions import (
+    DatabaseError, ConnectionError, SchemaError, IntegrityError,
+    SQLInjectionError, InvalidTableNameError
+)
+
 # Module-level logger
 logger = logging.getLogger(__name__)
 
@@ -147,17 +153,27 @@ class BaseManager:
             bool: True nếu hợp lệ
         
         Raises:
-            ValueError: Nếu identifier không hợp lệ
+            SQLInjectionError: Nếu identifier không hợp lệ
+            InvalidTableNameError: Nếu table name không có trong whitelist
         """
         if not name:
-            raise ValueError(f"{identifier_type.capitalize()} name cannot be empty")
+            raise SQLInjectionError(
+                f"{identifier_type.capitalize()} name cannot be empty",
+                input_value=""
+            )
         
         if identifier_type == "table":
             if name.lower() not in VALID_TABLE_NAMES:
-                raise ValueError(f"Invalid table name: '{name}'. Allowed tables: {VALID_TABLE_NAMES}")
+                raise InvalidTableNameError(
+                    table_name=name,
+                    valid_tables=list(VALID_TABLE_NAMES)
+                )
         
         if not VALID_COLUMN_PATTERN.match(name):
-            raise ValueError(f"Invalid {identifier_type} name: '{name}'. Must match pattern: [a-zA-Z_][a-zA-Z0-9_]*")
+            raise SQLInjectionError(
+                f"Invalid {identifier_type} name format",
+                input_value=name
+            )
         
         return True
 
@@ -170,8 +186,11 @@ class BaseManager:
             # Validate column_definition chỉ chứa các keywords an toàn
             safe_definition_pattern = re.compile(r'^[A-Z\s]+(\s+REFERENCES\s+[a-zA-Z_]+\([a-zA-Z_]+\))?$', re.IGNORECASE)
             if not safe_definition_pattern.match(column_definition):
-                raise ValueError(f"Invalid column definition: '{column_definition}'")
-        except ValueError as e:
+                raise SQLInjectionError(
+                    "Invalid column definition format",
+                    input_value=column_definition
+                )
+        except (SQLInjectionError, InvalidTableNameError) as e:
             logger.error(f"Security violation in _upgrade_table_if_needed: {e}")
             return
         

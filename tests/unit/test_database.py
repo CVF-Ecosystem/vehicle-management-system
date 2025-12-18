@@ -12,6 +12,9 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+# Import custom exceptions for testing
+from exceptions import SQLInjectionError, InvalidTableNameError
+
 
 class TestBaseManager:
     """Test suite for BaseManager (database connection and schema)."""
@@ -102,12 +105,12 @@ class TestBaseManager:
 
         # Invalid table names should be blocked
         for bad_table in ["vehicles; DROP TABLE vehicles;", "sqlite_master", "vehicles--", ""]:
-            with pytest.raises(ValueError):
+            with pytest.raises((InvalidTableNameError, SQLInjectionError)):
                 manager._validate_identifier(bad_table, "table")
 
         # Invalid column names should be blocked
         for bad_col in ["vin; DROP TABLE vehicles;", "vin--", "vin name", "1vin", "", "vin\nnew"]:
-            with pytest.raises(ValueError):
+            with pytest.raises(SQLInjectionError):
                 manager._validate_identifier(bad_col, "column")
 
 
