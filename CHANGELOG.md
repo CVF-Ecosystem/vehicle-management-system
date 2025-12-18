@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0-alpha] - 2024-12-19
+
+### Phase 1A: Backup/Restore + Audit Logging
+
+#### Added
+
+- **Phase 1A.1**: Database Backup System
+  - `core/backup_service.py`: BackupService class with full backup/restore functionality
+  - BackupMetadata dataclass for storing backup information
+  - Manual and automatic backup types with separate directories
+  - SHA-256 checksum verification for backup integrity
+  - Backup metadata stored in _backup_meta.json
+  - 19 unit tests for backup service
+
+- **Phase 1A.2**: Restore & Verification
+  - `restore_backup()`: Restore database from backup with verification
+  - `verify_backup()`: Verify backup integrity with checksum and SQLite validation
+  - Pre-restore backup creation for rollback safety
+  - `get_backup_info()`: Get detailed backup metadata
+
+- **Phase 1A.3**: Audit Logging System
+  - `database/audit_repository.py`: AuditRepository with comprehensive logging
+  - AuditEntry dataclass and AuditAction enum
+  - Track all CRUD operations with old/new values
+  - Special actions: BACKUP, RESTORE, LOGIN, LOGOUT, CONFIG_CHANGE, etc.
+  - Query/filter/export capabilities
+  - Convenience functions: log_create, log_update, log_delete, log_backup, log_restore
+  - 30 unit tests for audit repository
+
+- **Phase 1A.4**: Backup/Restore UI
+  - `ui/backup_dialog.py`: Full-featured backup management dialog
+  - Create manual backups with one-click
+  - List and browse existing backups
+  - Restore from backup with confirmation
+  - Verify backup integrity visually
+  - Delete old backups
+  - View backup statistics
+
+- **Phase 1A Integration Tests**
+  - 13 integration tests for backup + audit interaction
+  - Test data preservation through backup/restore cycle
+  - Test audit logs included in backups
+
+#### Test Coverage
+
+- **Total tests**: 97 (84 unit + 13 integration)
+- All tests passing
+
+---
+
 ## [5.0.1] - 2024-12-19
 
 ### Phase 0: Stabilization & Test Baseline
