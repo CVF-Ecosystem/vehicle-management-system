@@ -109,13 +109,19 @@ class BackupService:
         Initialize BackupService.
         
         Args:
-            db_path: Path to the database file. Defaults to config.DB_FILE.
-            backup_dir: Root backup directory. Defaults to 'backups/'.
+            db_path: Path to the database file. Defaults to project-root/DB_FILE.
+            backup_dir: Root backup directory. Defaults to project-root/backups/.
             max_auto_backups: Maximum number of auto backups to keep.
             max_manual_backups: Maximum number of manual backups to keep.
         """
-        self.db_path = Path(db_path or config.DB_FILE)
-        self.backup_dir = Path(backup_dir or self.DEFAULT_BACKUP_DIR)
+
+        # Anchor to project root so backups are predictable even if CWD changes.
+        project_root = Path(__file__).resolve().parents[1]
+        default_db = project_root / config.DB_FILE
+        default_backup_root = project_root / self.DEFAULT_BACKUP_DIR
+
+        self.db_path = Path(db_path) if db_path else default_db
+        self.backup_dir = Path(backup_dir) if backup_dir else default_backup_root
         self.auto_backup_dir = self.backup_dir / "auto"
         self.manual_backup_dir = self.backup_dir / "manual"
         self.max_auto_backups = max_auto_backups

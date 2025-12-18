@@ -45,6 +45,9 @@ logs/*.log
 # Legacy DB file (không có extension)
 vehicle_management_v3.0
 
+# Backup artifacts
+backups/
+
 # Archives data (quá lớn để commit)
 archives/*.db
 
