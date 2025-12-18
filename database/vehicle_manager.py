@@ -8,11 +8,73 @@ logger = logging.getLogger(__name__)
 from .base_manager import BaseManager
 from .location_manager import LocationManager
 from config import DB_FILE, ARCHIVES_DIR, STATUS_IN_STOCK, STATUS_SHIPPED
+from data_normalizer import validate_vin, normalize_vin, normalize_owner, normalize_vehicle_type
+from exceptions import ValidationError, VINValidationError, DateValidationError, RequiredFieldError
 
 class VehicleManager(BaseManager):
     def __init__(self):
         super().__init__()
         self.location_manager = LocationManager()
+
+    def _validate_vehicle_data(self, vin: str, owner: str, date_in: datetime = None) -> dict:
+        """
+        Validate dữ liệu xe trước khi ghi vào database.
+        
+        Args:
+            vin: Số khung xe
+            owner: Tên chủ hàng
+            date_in: Ngày nhập (datetime object hoặc None)
+        
+        Returns:
+            dict: {
+                "valid": bool,
+                "vin": str (normalized),
+                "owner": str (normalized),
+                "errors": list[str]
+            }
+        
+        Raises:
+            VINValidationError: Nếu VIN không hợp lệ
+            RequiredFieldError: Nếu thiếu trường bắt buộc
+            DateValidationError: Nếu ngày không hợp lệ
+        """
+        errors = []
+        
+        # Validate VIN
+        vin_result = validate_vin(vin, strict=False)
+        if not vin_result["valid"]:
+            logger.warning(f"VIN validation failed: {vin} - {vin_result['message']}")
+            raise VINValidationError(
+                vin=vin,
+                message=vin_result["message"]
+            )
+        normalized_vin = vin_result["normalized"]
+        
+        # Validate Owner (required field)
+        if not owner or not owner.strip():
+            logger.warning(f"Owner validation failed: empty owner for VIN {normalized_vin}")
+            raise RequiredFieldError(
+                field_name="owner",
+                message="Tên chủ hàng không được để trống"
+            )
+        normalized_owner = normalize_owner(owner)
+        
+        # Validate date_in
+        if date_in is not None:
+            if not isinstance(date_in, datetime):
+                logger.warning(f"Date validation failed: date_in is not datetime object for VIN {normalized_vin}")
+                raise DateValidationError(
+                    field_name="date_in",
+                    value=str(date_in),
+                    expected_format="datetime object"
+                )
+        
+        return {
+            "valid": True,
+            "vin": normalized_vin,
+            "owner": normalized_owner,
+            "errors": []
+        }
 
     def _handle_existing_vin(self, vin, owner, vehicle_type, date_in, location_id):
         cursor = self.conn.cursor()
@@ -41,19 +103,52 @@ class VehicleManager(BaseManager):
         """
         Thêm một xe mới vào CSDL.
         
+        Args:
+            vin: Số khung xe (sẽ được validate và normalize)
+            owner: Tên chủ hàng (sẽ được validate và normalize)
+            vehicle_type: Loại xe (sẽ được normalize)
+            date_in: Ngày nhập (datetime object)
+            location_id: ID vị trí (có thể None)
+        
         Returns:
             dict: {"success": bool, "message": str}
         """
         try:
+            # === Phase 0.3: Data Integrity - Validate trước khi ghi DB ===
+            validated = self._validate_vehicle_data(vin, owner, date_in)
+            normalized_vin = validated["vin"]
+            normalized_owner = validated["owner"]
+            normalized_type = normalize_vehicle_type(vehicle_type) if vehicle_type else ""
+            
+            logger.debug(f"Validated data: VIN={normalized_vin}, Owner={normalized_owner}, Type={normalized_type}")
+            
             with self.conn:
                 self.conn.execute(
                     "INSERT INTO vehicles(vin, owner, vehicle_type, date_in, status, is_active, location_id) VALUES (?, ?, ?, ?, ?, 1, ?)",
-                    (vin, owner, vehicle_type, date_in.isoformat(), STATUS_IN_STOCK, location_id)
+                    (normalized_vin, normalized_owner, normalized_type, date_in.isoformat(), STATUS_IN_STOCK, location_id)
                 )
             return {"success": True, "message": "Thêm xe mới thành công."}
+        
+        except VINValidationError as e:
+            logger.warning(f"VIN validation error: {e}")
+            return {"success": False, "message": str(e)}
+        except RequiredFieldError as e:
+            logger.warning(f"Required field error: {e}")
+            return {"success": False, "message": str(e)}
+        except DateValidationError as e:
+            logger.warning(f"Date validation error: {e}")
+            return {"success": False, "message": str(e)}
         except sqlite3.IntegrityError as e:
             logger.warning(f"VIN đã tồn tại, đang xử lý nhập lại: {vin}. Chi tiết: {e}")
-            return self._handle_existing_vin(vin, owner, vehicle_type, date_in, location_id)
+            # Sử dụng dữ liệu đã normalize cho việc nhập lại
+            validated = self._validate_vehicle_data(vin, owner, date_in)
+            return self._handle_existing_vin(
+                validated["vin"], 
+                validated["owner"], 
+                normalize_vehicle_type(vehicle_type) if vehicle_type else "",
+                date_in, 
+                location_id
+            )
         except sqlite3.OperationalError as e:
             logger.error(f"Lỗi thao tác CSDL khi thêm xe {vin}: {e}")
             return {"success": False, "message": f"Lỗi CSDL: {e}"}

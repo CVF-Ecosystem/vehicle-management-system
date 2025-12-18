@@ -121,15 +121,17 @@ class TestDatabaseSmoke:
         vehicle_mgr = VehicleManager()
         
         # Create - VehicleManager.add_vehicle cần location_id và datetime object
+        # VIN không được chứa I, O, Q (theo chuẩn VIN)
         from datetime import datetime
         result = vehicle_mgr.add_vehicle(
-            vin="SMOKE1234567890AB",
+            vin="1HGBH41JXMN109999",  # Valid VIN without I, O, Q
             owner="SMOKE TEST",
             vehicle_type="Test",
             date_in=datetime(2024, 1, 1),  # API yêu cầu datetime object
             location_id=None
         )
         assert result is not None
+        assert result.get("success") is True, f"Add vehicle should succeed, got: {result}"
         
         # Read
         vehicles = vehicle_mgr.get_in_stock()

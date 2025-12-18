@@ -108,11 +108,15 @@ class ValidationError(VehicleManagementError):
 class VINValidationError(ValidationError):
     """Invalid VIN format or checksum."""
     
-    def __init__(self, vin: str, reason: str = None):
-        message = f"VIN không hợp lệ: {vin}"
-        if reason:
-            message += f" - {reason}"
-        super().__init__(message, "vin", "INVALID_VIN")
+    def __init__(self, vin: str, reason: str = None, message: str = None):
+        # Cho phép tùy chỉnh message hoặc tự tạo
+        if message:
+            final_message = message
+        else:
+            final_message = f"VIN không hợp lệ: {vin}"
+            if reason:
+                final_message += f" - {reason}"
+        super().__init__(final_message, "vin", "INVALID_VIN")
         self.details["vin"] = vin
         if reason:
             self.details["reason"] = reason
@@ -121,12 +125,16 @@ class VINValidationError(ValidationError):
 class DateValidationError(ValidationError):
     """Invalid date format or value."""
     
-    def __init__(self, value: str, expected_format: str = None):
-        message = f"Ngày không hợp lệ: {value}"
-        if expected_format:
-            message += f" (expected: {expected_format})"
-        super().__init__(message, "date", "INVALID_DATE")
-        self.details["value"] = value
+    def __init__(self, value: str = None, expected_format: str = None, field_name: str = None, message: str = None):
+        if message:
+            final_message = message
+        else:
+            final_message = f"Ngày không hợp lệ: {value}"
+            if expected_format:
+                final_message += f" (expected: {expected_format})"
+        super().__init__(final_message, field_name or "date", "INVALID_DATE")
+        if value:
+            self.details["value"] = value
         if expected_format:
             self.details["expected_format"] = expected_format
 
@@ -134,10 +142,13 @@ class DateValidationError(ValidationError):
 class RequiredFieldError(ValidationError):
     """Required field is missing or empty."""
     
-    def __init__(self, field: str):
+    def __init__(self, field_name: str = None, message: str = None, field: str = None):
+        # Support cả field_name và field cho backward compatibility
+        actual_field = field_name or field or "unknown"
+        final_message = message or f"Trường bắt buộc không được để trống: {actual_field}"
         super().__init__(
-            f"Trường bắt buộc không được để trống: {field}",
-            field,
+            final_message,
+            actual_field,
             "REQUIRED_FIELD"
         )
 

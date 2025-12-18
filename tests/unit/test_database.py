@@ -217,6 +217,107 @@ class TestVehicleManager:
                 pytest.skip("Vehicle may be assigned to dispatch")
 
 
+class TestDataIntegrity:
+    """Test suite for data integrity validation (Phase 0.3)."""
+    
+    @pytest.mark.regression
+    @pytest.mark.db
+    def test_add_vehicle_validates_vin(self, fresh_db):
+        """Thêm xe với VIN không hợp lệ phải bị chặn."""
+        db_path = fresh_db
+        
+        from database.vehicle_manager import VehicleManager
+        from datetime import datetime
+        
+        manager = VehicleManager()
+        
+        # Invalid VIN - empty
+        result = manager.add_vehicle(
+            vin="",
+            owner="TEST OWNER",
+            vehicle_type="Test",
+            date_in=datetime(2024, 1, 1),
+            location_id=None
+        )
+        assert result["success"] is False, "Empty VIN should be rejected"
+        assert "VIN" in result["message"] or "trống" in result["message"].lower()
+    
+    @pytest.mark.regression
+    @pytest.mark.db
+    def test_add_vehicle_validates_owner(self, fresh_db):
+        """Thêm xe với owner rỗng phải bị chặn."""
+        db_path = fresh_db
+        
+        from database.vehicle_manager import VehicleManager
+        from datetime import datetime
+        
+        manager = VehicleManager()
+        
+        # Invalid Owner - empty (dùng VIN hợp lệ, không chứa I, O, Q)
+        result = manager.add_vehicle(
+            vin="1HGBH41JXMN109186",  # Valid VIN without I, O, Q
+            owner="",
+            vehicle_type="Test",
+            date_in=datetime(2024, 1, 1),
+            location_id=None
+        )
+        assert result["success"] is False, "Empty owner should be rejected"
+        assert "chủ hàng" in result["message"].lower() or "owner" in result["message"].lower() or "trống" in result["message"].lower()
+    
+    @pytest.mark.regression
+    @pytest.mark.db
+    def test_add_vehicle_normalizes_data(self, fresh_db):
+        """Dữ liệu xe phải được normalize trước khi ghi DB."""
+        db_path = fresh_db
+        
+        from database.vehicle_manager import VehicleManager
+        from datetime import datetime
+        
+        manager = VehicleManager()
+        
+        # Add with non-normalized data (VIN không chứa I, O, Q)
+        result = manager.add_vehicle(
+            vin="  1hgbh41jxmn109186  ",  # lowercase, spaces, valid VIN
+            owner="  test owner  ",  # lowercase, spaces
+            vehicle_type="  sedan  ",  # lowercase, spaces
+            date_in=datetime(2024, 1, 1),
+            location_id=None
+        )
+        assert result["success"] is True, f"Valid data should be accepted, got: {result['message']}"
+        
+        # Verify data was normalized in DB
+        vehicles = manager.get_in_stock()
+        assert len(vehicles) == 1
+        
+        vehicle = vehicles[0]
+        # VIN should be uppercase, trimmed
+        assert vehicle["vin"] == "1HGBH41JXMN109186"
+        # Owner should be normalized (uppercase)
+        assert vehicle["owner"] == "TEST OWNER"
+        # Type should be uppercase
+        assert vehicle["vehicle_type"] == "SEDAN"
+    
+    @pytest.mark.regression
+    @pytest.mark.db
+    def test_add_vehicle_rejects_short_vin(self, fresh_db):
+        """VIN quá ngắn (< 6 ký tự) phải bị chặn."""
+        db_path = fresh_db
+        
+        from database.vehicle_manager import VehicleManager
+        from datetime import datetime
+        
+        manager = VehicleManager()
+        
+        result = manager.add_vehicle(
+            vin="12345",  # Only 5 chars, no I, O, Q
+            owner="TEST OWNER",
+            vehicle_type="Test",
+            date_in=datetime(2024, 1, 1),
+            location_id=None
+        )
+        assert result["success"] is False, "Short VIN should be rejected"
+
+
 class TestLocationManager:
     """Test suite for LocationManager."""
     
