@@ -395,7 +395,7 @@ CREATE TABLE kpi_snapshots (
 
 ## 🗓️ CHI TIẾT ROADMAP THEO PHASE
 
-### 📌 PHASE 0: Stabilization & Test Baseline (1-2 tuần)
+### 📌 PHASE 0 – Stabilization & Test Baseline (1-2 tuần)
 
 **Mục tiêu:** Ổn định V5.x, khóa baseline để các phase sau có thể kiểm thử theo từng bước (ít rủi ro, dễ rollback).
 
@@ -426,7 +426,7 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 1A: Data Protection (Backup/Restore + Safety) (2-3 tuần)
+### 📌 PHASE 1A – Data Protection (Backup/Restore + Safety) (2-3 tuần)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
 |---|-----------|-------|-------------------|
@@ -456,7 +456,7 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 1B: Security (Auth + RBAC) (2-4 tuần)
+### 📌 PHASE 1B – Security (Auth + RBAC) (2-4 tuần)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
 |---|-----------|-------|-------------------|
@@ -485,7 +485,7 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 2: Enhanced UX (1-2 tháng)
+### 📌 PHASE 2 – Enhanced UX (1-2 tháng)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
 |---|-----------|-------|-------------------|
@@ -517,7 +517,7 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 3: API & Integration (2-3 tháng)
+### 📌 PHASE 3 – API & Integration (2-3 tháng)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
 |---|-----------|-------|-------------------|
@@ -548,7 +548,7 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 4: Analytics & AI (3-6 tháng)
+### 📌 PHASE 4 – Analytics & AI (3-6 tháng)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
 |---|-----------|-------|-------------------|
@@ -654,21 +654,21 @@ opencv-python
 thefuzz
 python-Levenshtein
 
-# === Phase 1: Security ===
+# === Phase 1 – Security ===
 bcrypt>=4.0.0                 # Password hashing
 cryptography>=41.0.0          # Encryption
 
-# === Phase 2: UX ===
+# === Phase 2 – UX ===
 pillow>=10.0.0                # Image processing (đã có qua qrcode)
 
-# === Phase 3: API ===
+# === Phase 3 – API ===
 fastapi>=0.104.0              # REST API framework
 uvicorn>=0.24.0               # ASGI server
 pydantic>=2.5.0               # Data validation
 python-jose>=3.3.0            # JWT tokens
 httpx>=0.25.0                 # HTTP client
 
-# === Phase 4: Analytics ===
+# === Phase 4 – Analytics ===
 numpy>=1.26.0                 # Numerical computing
 scikit-learn>=1.3.0           # Simple ML predictions (optional)
 

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.1.0-alpha] - 2024-12-19
 
-### Phase 1A: Backup/Restore + Audit Logging
+### Phase 1A – Backup/Restore + Audit Logging
 
 #### Added
 
@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - BackupMetadata dataclass for storing backup information
   - Manual and automatic backup types with separate directories
   - SHA-256 checksum verification for backup integrity
-  - Backup metadata stored in _backup_meta.json
+  - Backup metadata stored in `backup_meta.json`
   - 19 unit tests for backup service
 
 - **Phase 1A.2**: Restore & Verification
@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.0.1] - 2024-12-19
 
-### Phase 0: Stabilization & Test Baseline
+### Phase 0 – Stabilization & Test Baseline
 
 #### Added
 
@@ -141,6 +141,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
-| Version | Date       | Description                    |
-|---------|------------|--------------------------------|
-| 5.0.0   | 2024-12-17 | Initial baseline release       |
+| Version | Date       | Description             |
+|---------|------------|-------------------------|
+| 5.0.0   | 2024-12-17 | Initial baseline release |

@@ -17,7 +17,7 @@ from exceptions import (
 logger = logging.getLogger(__name__)
 
 # Whitelist các tên bảng và cột hợp lệ trong hệ thống
-VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations'}
+VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations', 'deleted_vehicles_archive', 'audit_logs'}
 VALID_COLUMN_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 class BaseManager:
@@ -137,6 +137,31 @@ class BaseManager:
             # Nâng cấp Schema và Tạo Chỉ mục
             self._upgrade_table_if_needed('vehicles', 'location_id', 'INTEGER REFERENCES locations(id)')
             self._upgrade_table_if_needed('drivers', 'cccd', 'TEXT')
+            
+            # Phase 1B: Soft Delete columns
+            self._upgrade_table_if_needed('vehicles', 'is_deleted', 'INTEGER DEFAULT 0')
+            self._upgrade_table_if_needed('vehicles', 'deleted_at', 'TEXT')
+            self._upgrade_table_if_needed('vehicles', 'deleted_by', 'TEXT')
+            self._upgrade_table_if_needed('vehicles', 'delete_reason', 'TEXT')
+            
+            # Phase 1B: Archive table for permanently deleted vehicles
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS deleted_vehicles_archive (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    vin TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    vehicle_type TEXT,
+                    date_in TEXT,
+                    date_out TEXT,
+                    original_status TEXT,
+                    soft_deleted_at TEXT,
+                    hard_deleted_at TEXT NOT NULL,
+                    deleted_by TEXT,
+                    delete_reason TEXT,
+                    full_record_json TEXT
+                )
+            """)
+            
             self._create_indexes_if_needed()
 
         logger.info("Schema CSDL đã được cập nhật.")
@@ -184,8 +209,12 @@ class BaseManager:
             self._validate_identifier(table_name, "table")
             self._validate_identifier(column_name, "column")
             # Validate column_definition chỉ chứa các keywords an toàn
-            safe_definition_pattern = re.compile(r'^[A-Z\s]+(\s+REFERENCES\s+[a-zA-Z_]+\([a-zA-Z_]+\))?$', re.IGNORECASE)
-            if not safe_definition_pattern.match(column_definition):
+            # Allow: INTEGER, TEXT, DEFAULT, REFERENCES, numbers for defaults
+            safe_definition_pattern = re.compile(
+                r'^[A-Z]+(\s+DEFAULT\s+\d+)?(\s+REFERENCES\s+[a-zA-Z_]+\([a-zA-Z_]+\))?$',
+                re.IGNORECASE
+            )
+            if not safe_definition_pattern.match(column_definition.strip()):
                 raise SQLInjectionError(
                     "Invalid column definition format",
                     input_value=column_definition
@@ -207,11 +236,18 @@ class BaseManager:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_vin ON vehicles (vin)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_owner ON vehicles (owner)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles (status)")
+            # Phase 1B: Index for soft delete queries
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_is_deleted ON vehicles (is_deleted)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_deleted_at ON vehicles (deleted_at) WHERE deleted_at IS NOT NULL")
             
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_locations_full_name ON locations (full_location_name)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_locations_free ON locations (is_occupied, full_location_name)")
 
             self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_cccd ON drivers (cccd) WHERE cccd IS NOT NULL")
+            
+            # Phase 1B: Index for archive table
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_archive_vin ON deleted_vehicles_archive (vin)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_archive_deleted_at ON deleted_vehicles_archive (hard_deleted_at)")
 
     def begin_transaction(self):
         """Bắt đầu một giao dịch CSDL."""
