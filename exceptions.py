@@ -311,3 +311,66 @@ class ExportError(VehicleManagementError):
         if report_type:
             details["report_type"] = report_type
         super().__init__(message, "EXPORT_ERROR", details)
+
+
+# =============================================================================
+# Backup/Restore Exceptions
+# =============================================================================
+
+class BackupError(VehicleManagementError):
+    """Base exception for backup/restore operations."""
+    
+    def __init__(self, message: str, code: str = None, details: dict = None):
+        super().__init__(message, code or "BACKUP_ERROR", details)
+
+
+class BackupCreationError(BackupError):
+    """Failed to create backup."""
+    
+    def __init__(self, message: str, db_path: str = None):
+        details = {}
+        if db_path:
+            details["db_path"] = db_path
+        super().__init__(message, "BACKUP_CREATION_FAILED", details)
+
+
+class RestoreError(BackupError):
+    """Failed to restore from backup."""
+    
+    def __init__(self, message: str, backup_path: str = None):
+        details = {}
+        if backup_path:
+            details["backup_path"] = backup_path
+        super().__init__(message, "RESTORE_FAILED", details)
+
+
+class BackupNotFoundError(BackupError):
+    """Backup file not found."""
+    
+    def __init__(self, path: str):
+        super().__init__(
+            f"Backup không tồn tại: {path}",
+            "BACKUP_NOT_FOUND",
+            {"path": path}
+        )
+
+
+class BackupCorruptedError(BackupError):
+    """Backup file is corrupted or invalid."""
+    
+    def __init__(self, message: str, path: str = None):
+        details = {}
+        if path:
+            details["path"] = path
+        super().__init__(message, "BACKUP_CORRUPTED", details)
+
+
+class SchemaVersionMismatchError(BackupError):
+    """Database schema version doesn't match."""
+    
+    def __init__(self, backup_version: str, current_version: str):
+        super().__init__(
+            f"Schema version không khớp: backup={backup_version}, hiện tại={current_version}",
+            "SCHEMA_VERSION_MISMATCH",
+            {"backup_version": backup_version, "current_version": current_version}
+        )
