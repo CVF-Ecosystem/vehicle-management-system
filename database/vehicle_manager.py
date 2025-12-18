@@ -446,25 +446,244 @@ class VehicleManager(BaseManager):
             logger.exception(f"Lỗi khi cập nhật VIN từ {old_vin} sang {new_vin}")
             return {"success": False, "message": str(e)}
 
-    def soft_delete_vehicle(self, vin):
+    def soft_delete_vehicle(self, vin, deleted_by: str = None, delete_reason: str = None):
+        """
+        Soft delete một xe - đánh dấu is_deleted=1 thay vì xóa thực sự.
+        
+        Args:
+            vin: VIN của xe cần xóa
+            deleted_by: Người thực hiện xóa (username)
+            delete_reason: Lý do xóa
+            
+        Returns:
+            dict: {"success": bool, "message": str}
+        """
         self.begin_transaction()
         try:
             vehicle = self.get_vehicle_by_vin(vin)
-            if vehicle and vehicle.get('location_id'):
+            if not vehicle:
+                self.rollback_transaction()
+                return {"success": False, "message": f"Không tìm thấy xe với VIN: {vin}"}
+            
+            # Giải phóng vị trí nếu có
+            if vehicle.get('location_id'):
                 self.location_manager.set_location_occupied(vehicle['location_id'], False)
 
             cur = self.conn.cursor()
-            cur.execute("UPDATE vehicles SET is_active = 0, location_id = NULL WHERE vin = ?", (vin,))
+            deleted_at = datetime.now(timezone.utc).isoformat()
+            
+            cur.execute("""
+                UPDATE vehicles 
+                SET is_active = 0, 
+                    is_deleted = 1, 
+                    deleted_at = ?, 
+                    deleted_by = ?, 
+                    delete_reason = ?,
+                    location_id = NULL 
+                WHERE vin = ? AND is_deleted = 0
+            """, (deleted_at, deleted_by, delete_reason, vin))
             
             self.commit_transaction()
             if cur.rowcount > 0:
+                logger.info(f"Soft deleted vehicle {vin} by {deleted_by}. Reason: {delete_reason}")
                 return {"success": True, "message": "Xóa xe thành công."}
             else:
-                return {"success": False, "message": "Không tìm thấy xe để xóa."}
+                return {"success": False, "message": "Không tìm thấy xe để xóa hoặc xe đã bị xóa trước đó."}
         except Exception as e:
             self.rollback_transaction()
             logger.exception(f"Lỗi khi xóa mềm VIN {vin}: {e}")
             return {"success": False, "message": str(e)}
+
+    def restore_deleted_vehicle(self, vin, restored_by: str = None):
+        """
+        Khôi phục một xe đã bị soft delete.
+        
+        Args:
+            vin: VIN của xe cần khôi phục
+            restored_by: Người thực hiện khôi phục
+            
+        Returns:
+            dict: {"success": bool, "message": str}
+        """
+        self.begin_transaction()
+        try:
+            # Tìm xe đã bị xóa
+            cur = self.conn.cursor()
+            cur.execute("""
+                SELECT * FROM vehicles 
+                WHERE vin = ? AND is_deleted = 1
+            """, (vin,))
+            vehicle = cur.fetchone()
+            
+            if not vehicle:
+                self.rollback_transaction()
+                return {"success": False, "message": f"Không tìm thấy xe đã xóa với VIN: {vin}"}
+            
+            # Khôi phục xe
+            cur.execute("""
+                UPDATE vehicles 
+                SET is_active = 1, 
+                    is_deleted = 0, 
+                    deleted_at = NULL, 
+                    deleted_by = NULL, 
+                    delete_reason = NULL
+                WHERE vin = ? AND is_deleted = 1
+            """, (vin,))
+            
+            self.commit_transaction()
+            if cur.rowcount > 0:
+                logger.info(f"Restored vehicle {vin} by {restored_by}")
+                return {"success": True, "message": f"Khôi phục xe {vin} thành công."}
+            else:
+                return {"success": False, "message": "Không thể khôi phục xe."}
+        except Exception as e:
+            self.rollback_transaction()
+            logger.exception(f"Lỗi khi khôi phục VIN {vin}: {e}")
+            return {"success": False, "message": str(e)}
+
+    def list_deleted_vehicles(self, limit: int = 100, offset: int = 0, 
+                               search_term: str = None, owner_filter: str = None):
+        """
+        Lấy danh sách các xe đã bị soft delete.
+        
+        Args:
+            limit: Số bản ghi tối đa
+            offset: Vị trí bắt đầu
+            search_term: Từ khóa tìm kiếm (VIN hoặc owner)
+            owner_filter: Lọc theo chủ hàng
+            
+        Returns:
+            list[dict]: Danh sách xe đã xóa
+        """
+        query = """
+            SELECT v.*, l.full_location_name
+            FROM vehicles v
+            LEFT JOIN locations l ON v.location_id = l.id
+            WHERE v.is_deleted = 1
+        """
+        params = []
+        
+        if owner_filter:
+            query += " AND v.owner = ?"
+            params.append(owner_filter)
+        if search_term:
+            query += " AND (v.vin LIKE ? OR v.owner LIKE ?)"
+            params.extend([f"%{search_term}%", f"%{search_term}%"])
+        
+        query += " ORDER BY v.deleted_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        try:
+            cur = self.conn.cursor()
+            cur.execute(query, params)
+            results = [dict(r) for r in cur.fetchall()]
+            return results
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy danh sách xe đã xóa: {e}")
+            return []
+
+    def count_deleted_vehicles(self, search_term: str = None, owner_filter: str = None):
+        """Đếm số xe đã bị soft delete."""
+        query = "SELECT COUNT(vin) FROM vehicles WHERE is_deleted = 1"
+        params = []
+        
+        if owner_filter:
+            query += " AND owner = ?"
+            params.append(owner_filter)
+        if search_term:
+            query += " AND (vin LIKE ? OR owner LIKE ?)"
+            params.extend([f"%{search_term}%", f"%{search_term}%"])
+        
+        try:
+            cur = self.conn.cursor()
+            cur.execute(query, params)
+            return cur.fetchone()[0]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi đếm xe đã xóa: {e}")
+            return 0
+
+    def hard_delete_vehicle(self, vin, deleted_by: str = None, delete_reason: str = None):
+        """
+        Xóa vĩnh viễn một xe đã bị soft delete.
+        Lưu bản ghi vào deleted_vehicles_archive trước khi xóa.
+        
+        Args:
+            vin: VIN của xe cần xóa vĩnh viễn
+            deleted_by: Người thực hiện xóa
+            delete_reason: Lý do xóa vĩnh viễn
+            
+        Returns:
+            dict: {"success": bool, "message": str}
+        """
+        import json
+        
+        self.begin_transaction()
+        try:
+            # Tìm xe đã bị soft delete
+            cur = self.conn.cursor()
+            cur.execute("""
+                SELECT * FROM vehicles 
+                WHERE vin = ? AND is_deleted = 1
+            """, (vin,))
+            vehicle = cur.fetchone()
+            
+            if not vehicle:
+                self.rollback_transaction()
+                return {"success": False, "message": f"Không tìm thấy xe đã xóa với VIN: {vin}. Chỉ có thể xóa vĩnh viễn xe đã soft delete."}
+            
+            vehicle_dict = dict(vehicle)
+            hard_deleted_at = datetime.now(timezone.utc).isoformat()
+            
+            # Lưu vào archive trước khi xóa
+            cur.execute("""
+                INSERT INTO deleted_vehicles_archive (
+                    vin, owner, vehicle_type, date_in, date_out,
+                    original_status, soft_deleted_at, hard_deleted_at,
+                    deleted_by, delete_reason, full_record_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                vehicle_dict['vin'],
+                vehicle_dict['owner'],
+                vehicle_dict.get('vehicle_type'),
+                vehicle_dict.get('date_in'),
+                vehicle_dict.get('date_out'),
+                vehicle_dict.get('status'),
+                vehicle_dict.get('deleted_at'),
+                hard_deleted_at,
+                deleted_by,
+                delete_reason,
+                json.dumps(vehicle_dict, ensure_ascii=False)
+            ))
+            
+            # Xóa khỏi bảng vehicles
+            cur.execute("DELETE FROM vehicles WHERE vin = ?", (vin,))
+            
+            self.commit_transaction()
+            logger.info(f"Hard deleted vehicle {vin} by {deleted_by}. Archived to deleted_vehicles_archive.")
+            return {"success": True, "message": f"Đã xóa vĩnh viễn xe {vin} và lưu trữ bản ghi."}
+        except Exception as e:
+            self.rollback_transaction()
+            logger.exception(f"Lỗi khi xóa vĩnh viễn VIN {vin}: {e}")
+            return {"success": False, "message": str(e)}
+
+    def get_archived_deleted_vehicles(self, limit: int = 100, offset: int = 0):
+        """
+        Lấy danh sách các xe đã bị xóa vĩnh viễn từ archive.
+        
+        Returns:
+            list[dict]: Danh sách xe trong archive
+        """
+        try:
+            cur = self.conn.cursor()
+            cur.execute("""
+                SELECT * FROM deleted_vehicles_archive
+                ORDER BY hard_deleted_at DESC
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
+            return [dict(r) for r in cur.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy archive xe đã xóa: {e}")
+            return []
 
     def get_vehicle_by_vin(self, vin):
         """Lấy thông tin chi tiết của một xe bằng VIN, kèm thông tin vị trí."""

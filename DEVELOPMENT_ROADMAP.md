@@ -400,7 +400,7 @@ CREATE TABLE kpi_snapshots (
 **Mục tiêu:** Ổn định V5.x, khóa baseline để các phase sau có thể kiểm thử theo từng bước (ít rủi ro, dễ rollback).
 
 | # | Hạng mục | Mô tả | Files cần tạo/sửa |
-|---|---------|-------|-------------------|
+| --- | ------- | ----- | ----------------- |
 | 0.1 | Logging chuẩn hóa | Chuẩn format log, thêm log level, tách log file theo ngày (nếu cần) | `utils.py`, `app_log.txt`/`logs/*` |
 | 0.2 | Error handling tối thiểu | Thống nhất thông báo lỗi UI + ghi log, tránh crash im lặng | `ui/components.py`, `main.py` |
 | 0.3 | Data integrity checks | Validate VIN/Owner/Date trước khi ghi DB, chặn dữ liệu rác | `data_normalizer.py`, `database/*` |
@@ -429,7 +429,7 @@ CREATE TABLE kpi_snapshots (
 ### 📌 PHASE 1A – Data Protection (Backup/Restore + Safety) (2-3 tuần)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
-|---|-----------|-------|-------------------|
+| --- | --------- | ----- | ----------------- |
 | 1A.1 | Database Backup | Auto backup (lịch) + manual backup + pre-archive backup | `core/backup_service.py`, `ui/dialogs/backup_restore.py` |
 | 1A.2 | Restore & verify | Restore DB + verify schema/version + rollback an toàn | `core/backup_service.py`, `database/*` |
 | 1A.3 | Undo Operations (scope rõ) | Hoàn tác thao tác gần nhất cho các action “nguy hiểm” | `core/undo_service.py` |
@@ -459,7 +459,7 @@ CREATE TABLE kpi_snapshots (
 ### 📌 PHASE 1B – Security (Auth + RBAC) (2-4 tuần)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
-|---|-----------|-------|-------------------|
+| --- | --------- | ----- | ----------------- |
 | 1B.1 | User Authentication | Login/logout, password hashing | `auth/*`, `database/user_repository.py` |
 | 1B.2 | Role-based Access | Admin, Operator, Viewer; quyền theo action/tab | `auth/permissions.py`, `ui/*` |
 | 1B.3 | Session & lock | Timeout/lock screen (tùy scope) | `auth/session.py` |
@@ -488,7 +488,7 @@ CREATE TABLE kpi_snapshots (
 ### 📌 PHASE 2 – Enhanced UX (1-2 tháng)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
-|---|-----------|-------|-------------------|
+| --- | --------- | ----- | ----------------- |
 | 2.1 | Advanced Search | Lọc theo ngày, trạng thái, block | `ui/tabs/search_tab.py` |
 | 2.2 | Yard Map Visualization | Bản đồ 2D bãi xe | `ui/tabs/yard_map_tab.py`, `ui/widgets/yard_canvas.py` |
 | 2.3 | Batch Operations | Chọn nhiều xe, thao tác hàng loạt | `ui/tabs/stock_tab.py` |
@@ -520,7 +520,7 @@ CREATE TABLE kpi_snapshots (
 ### 📌 PHASE 3 – API & Integration (2-3 tháng)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
-|---|-----------|-------|-------------------|
+| --- | --------- | ----- | ----------------- |
 | 3.1 | REST API Server | FastAPI backend | `api/*` |
 | 3.2 | API Authentication | JWT tokens | `api/middleware/auth_middleware.py` |
 | 3.3 | Webhook Events | Notify external systems | `api/webhooks.py` |
@@ -551,7 +551,7 @@ CREATE TABLE kpi_snapshots (
 ### 📌 PHASE 4 – Analytics & AI (3-6 tháng)
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
-|---|-----------|-------|-------------------|
+| --- | --------- | ----- | ----------------- |
 | 4.1 | KPI Dashboard | Metrics, trends | `ui/tabs/analytics_tab.py`, `ui/widgets/kpi_card.py` |
 | 4.2 | Trend Analysis | So sánh các kỳ | `core/analytics_service.py` |
 | 4.3 | Predictions | Dự báo đơn giản | `core/prediction_service.py` |

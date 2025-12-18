@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Phase 1A – Backup/Restore + Audit Logging
 
-#### Added
+#### Added (Phase 1A)
 
 - **Phase 1A.1**: Database Backup System
   - `core/backup_service.py`: BackupService class with full backup/restore functionality
@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Phase 0 – Stabilization & Test Baseline
 
-#### Added
+#### Added (Phase 0)
 
 - **Phase 0.0**: Test infrastructure
   - pytest + pytest-cov configuration (pytest.ini)
@@ -141,6 +141,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
-| Version | Date       | Description             |
-|---------|------------|-------------------------|
+| Version | Date       | Description              |
+| ------- | ---------- | ------------------------ |
 | 5.0.0   | 2024-12-17 | Initial baseline release |
