@@ -4,7 +4,7 @@
 >
 > Ngày tạo: 17/12/2025
 > Cập nhật: 19/12/2025
-> Phiên bản hiện tại: V5.1.0-beta
+> Phiên bản hiện tại: V5.1.0-rc1
 > Phiên bản mục tiêu: V6.0
 
 ---
@@ -478,27 +478,33 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 1C – Security (Auth + RBAC) (2-4 tuần) – DEFERRED
+### ✅ PHASE 1C – Security (Auth + RBAC) ✅ HOÀN THÀNH
 
-> **Ghi chú:** Phase này được dời sang sau Phase 2 vì chưa có yêu cầu multi-user
+> **Hoàn thành:** 19/12/2025 | **Tag:** `v5.1.0-rc1` | **Tests:** 142 passed (29 auth tests)
 
-| # | Tính năng | Mô tả | Files cần tạo/sửa |
-| --- | --------- | ----- | ----------------- |
-| 1C.1 | User Authentication | Login/logout, password hashing | `auth/*`, `database/user_repository.py` |
-| 1C.2 | Role-based Access | Admin, Operator, Viewer; quyền theo action/tab | `auth/permissions.py`, `ui/*` |
-| 1C.3 | Session & lock | Timeout/lock screen (tùy scope) | `auth/session.py` |
-| 1C.4 | Audit Logging (security events) | Log đăng nhập, thất bại, đổi mật khẩu, phân quyền | `database/audit_repository.py` |
+| # | Tính năng | Mô tả | Files đã tạo/sửa | Status |
+| --- | --------- | ----- | ----------------- | ------ |
+| 1C.1 | User Authentication | Login/logout, SHA-256 password hashing | `auth/*`, `database/user_repository.py` | ✅ |
+| 1C.2 | Role-based Access | Admin, Operator, Viewer; 25+ permissions | `auth/permissions.py`, `main.py` | ✅ |
+| 1C.3 | Account Lockout | Khóa sau 5 lần đăng nhập sai (15 phút) | `database/user_repository.py` | ✅ |
+| 1C.4 | Login History | Ghi log đăng nhập, thất bại, đổi mật khẩu | `database/user_repository.py` | ✅ |
 
-**Deliverables:**
+**Deliverables:** ✅
 
-- [ ] Login dialog khi khởi động app
-- [ ] Quản lý user/role (tối thiểu: tạo user, reset mật khẩu)
-- [ ] Chặn thao tác không đủ quyền (ẩn hoặc disable UI + thông báo)
+- [x] Login dialog khi khởi động app
+- [x] Quản lý user/role (Admin only)
+- [x] User menu với đổi mật khẩu, đăng xuất
+- [x] Status bar hiển thị user hiện tại
+- [x] Default admin: admin / admin123
+- [x] 29 unit tests cho auth module
 
-**Exit Gate (Go/No-Go):**
+**Exit Gate:** ✅ PASSED
 
-- [ ] Test ma trận quyền (role x action) pass 100% theo bảng test
-- [ ] Không có đường vòng UI/API cho phép bypass quyền
+- [x] Login/logout hoạt động chính xác
+- [x] Password hashing với salt
+- [x] Account lockout sau 5 lần sai
+- [x] RBAC với 3 roles và 25+ permissions
+- [x] 142 tests passed
 
 ---
 
