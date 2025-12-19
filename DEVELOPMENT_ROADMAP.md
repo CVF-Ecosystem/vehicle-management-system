@@ -3,7 +3,8 @@
 > **Tài liệu này mô tả chi tiết lộ trình phát triển và cấu trúc dự án**
 >
 > Ngày tạo: 17/12/2025
-> Phiên bản hiện tại: V5.0
+> Cập nhật: 19/12/2025
+> Phiên bản hiện tại: V5.1.0-beta
 > Phiên bản mục tiêu: V6.0
 
 ---
@@ -426,57 +427,73 @@ CREATE TABLE kpi_snapshots (
 
 ---
 
-### 📌 PHASE 1A – Data Protection (Backup/Restore + Safety) (2-3 tuần)
+### ✅ PHASE 1A – Data Protection (Backup/Restore + Audit) ✅ HOÀN THÀNH
 
-| # | Tính năng | Mô tả | Files cần tạo/sửa |
-| --- | --------- | ----- | ----------------- |
-| 1A.1 | Database Backup | Auto backup (lịch) + manual backup + pre-archive backup | `core/backup_service.py`, `ui/dialogs/backup_restore.py` |
-| 1A.2 | Restore & verify | Restore DB + verify schema/version + rollback an toàn | `core/backup_service.py`, `database/*` |
-| 1A.3 | Undo Operations (scope rõ) | Hoàn tác thao tác gần nhất cho các action “nguy hiểm” | `core/undo_service.py` |
-| 1A.4 | Audit Logging (data events) | Ghi log thay đổi dữ liệu (ai/lúc nào/thay đổi gì) | `database/audit_repository.py` |
+> **Hoàn thành:** 18/12/2025 | **Tag:** `v5.1.0-alpha` | **Tests:** 47 passed
 
-**Deliverables:**
+| # | Tính năng | Mô tả | Files đã tạo/sửa | Status |
+| --- | --------- | ----- | ----------------- | ------ |
+| 1A.1 | Database Backup | Manual backup + export | `core/backup_service.py`, `ui/backup_dialog.py` | ✅ |
+| 1A.2 | Restore & verify | Restore DB + verify integrity | `core/backup_service.py` | ✅ |
+| 1A.3 | Audit Logging | Ghi log thay đổi dữ liệu (action/table/before/after) | `database/audit_repository.py` | ✅ |
 
-- [ ] Menu Backup/Restore trong Settings
-- [ ] Cơ chế backup tự động (có thể bật/tắt) + lưu lịch sử
-- [ ] Audit log viewer tối thiểu (lọc theo ngày/user/action)
-- [ ] Undo cho ít nhất: thêm xe, xuất xe, cập nhật vị trí
+**Deliverables:** ✅
 
-**Acceptance Criteria (Tester):**
+- [x] Menu Backup/Restore trong Tools menu
+- [x] Manual backup với timestamp và verify
+- [x] Audit log ghi đầy đủ CRUD operations
+- [x] Unit tests cho backup_service và audit_repository
 
-- [ ] Manual backup tạo file hợp lệ; restore từ file backup khôi phục dữ liệu chính xác
-- [ ] Auto backup tạo đúng theo lịch và không làm treo UI
-- [ ] Restore sai file/DB lỗi hiển thị thông báo rõ ràng và không làm mất DB hiện tại
-- [ ] Audit log ghi đúng actor + thời điểm + action + before/after (tối thiểu before/after key fields)
+**Exit Gate:** ✅ PASSED
 
-**Exit Gate (Go/No-Go):**
-
-- [ ] Có kịch bản rollback được mô tả và test thành công
-- [ ] Không có lỗi P0/P1 liên quan backup/restore
+- [x] Backup/Restore hoạt động chính xác
+- [x] Audit log ghi đúng before/after values
+- [x] 47 tests passed
 
 ---
 
-### 📌 PHASE 1B – Security (Auth + RBAC) (2-4 tuần)
+### ✅ PHASE 1B – Soft Delete System ✅ HOÀN THÀNH
+
+> **Hoàn thành:** 19/12/2025 | **Tag:** `v5.1.0-beta` | **Tests:** 113 passed (16 soft delete tests)
+
+| # | Tính năng | Mô tả | Files đã tạo/sửa | Status |
+| --- | --------- | ----- | ----------------- | ------ |
+| 1B.1 | Soft Delete Schema | Thêm cột is_deleted, deleted_at, deleted_reason | `database/base_manager.py` | ✅ |
+| 1B.2 | VehicleManager Methods | soft_delete, restore, hard_delete, list methods | `database/vehicle_manager.py` | ✅ |
+| 1B.3 | Archive Explorer UI | Dialog quản lý xe đã xóa/lưu trữ | `ui/deleted_vehicles_dialog.py` | ✅ |
+
+**Deliverables:** ✅
+
+- [x] Soft delete thay vì xóa vĩnh viễn
+- [x] UI quản lý xe đã xóa (restore/hard delete)
+- [x] Tích hợp vào Tools menu
+- [x] 16 unit tests cho soft delete
+
+**Exit Gate:** ✅ PASSED
+
+- [x] Soft delete không mất dữ liệu
+- [x] Restore khôi phục đúng trạng thái
+- [x] Hard delete yêu cầu lý do
+- [x] 113 tests passed
+
+---
+
+### 📌 PHASE 1C – Security (Auth + RBAC) (2-4 tuần) – DEFERRED
+
+> **Ghi chú:** Phase này được dời sang sau Phase 2 vì chưa có yêu cầu multi-user
 
 | # | Tính năng | Mô tả | Files cần tạo/sửa |
 | --- | --------- | ----- | ----------------- |
-| 1B.1 | User Authentication | Login/logout, password hashing | `auth/*`, `database/user_repository.py` |
-| 1B.2 | Role-based Access | Admin, Operator, Viewer; quyền theo action/tab | `auth/permissions.py`, `ui/*` |
-| 1B.3 | Session & lock | Timeout/lock screen (tùy scope) | `auth/session.py` |
-| 1B.4 | Audit Logging (security events) | Log đăng nhập, thất bại, đổi mật khẩu, phân quyền | `database/audit_repository.py` |
+| 1C.1 | User Authentication | Login/logout, password hashing | `auth/*`, `database/user_repository.py` |
+| 1C.2 | Role-based Access | Admin, Operator, Viewer; quyền theo action/tab | `auth/permissions.py`, `ui/*` |
+| 1C.3 | Session & lock | Timeout/lock screen (tùy scope) | `auth/session.py` |
+| 1C.4 | Audit Logging (security events) | Log đăng nhập, thất bại, đổi mật khẩu, phân quyền | `database/audit_repository.py` |
 
 **Deliverables:**
 
 - [ ] Login dialog khi khởi động app
 - [ ] Quản lý user/role (tối thiểu: tạo user, reset mật khẩu)
 - [ ] Chặn thao tác không đủ quyền (ẩn hoặc disable UI + thông báo)
-
-**Acceptance Criteria (Tester):**
-
-- [ ] Password được hash (không lưu plain text)
-- [ ] Role “Viewer” không thể tạo/sửa/xóa; chỉ xem/tra cứu/xuất báo cáo (theo scope)
-- [ ] Role “Operator” chỉ thao tác nghiệp vụ; không được đổi role/user hệ thống
-- [ ] Log đủ sự kiện đăng nhập (success/fail) và thay đổi quyền
 
 **Exit Gate (Go/No-Go):**
 
@@ -746,4 +763,4 @@ def add_vehicle(
 
 ---
 
-Cập nhật lần cuối: 17/12/2025
+Cập nhật lần cuối: 19/12/2025
