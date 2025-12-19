@@ -32,6 +32,7 @@ from ui.management_dialogs import ManagementDialog
 from ui.layout_management_dialog import LayoutManagementDialog
 from ui.voucher_creation_dialog import VoucherCreationDialog
 from ui.archive_explorer_dialog import ArchiveExplorerDialog # Đảm bảo import này tồn tại
+from ui.deleted_vehicles_dialog import DeletedVehiclesDialog
 from config import APP_VERSION, APP_NAME, FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_LARGE, FONT_SIZE_SMALL
 class InventoryApp(ctk.CTk):
     def __init__(self):
@@ -124,6 +125,8 @@ class InventoryApp(ctk.CTk):
         self.tools_menu.add_command(label=self.get_translation("menu_create_vouchers"), command=self.open_voucher_creation_tool)
         # === CẬP NHẬT: Sử dụng key dịch thuật ===
         self.tools_menu.add_command(label=self.get_translation("menu_archive_explorer"), command=self.open_archive_explorer)
+        self.tools_menu.add_separator()
+        self.tools_menu.add_command(label=self.get_translation("menu_deleted_vehicles"), command=self.open_deleted_vehicles)
         # ===================
 
 
@@ -282,6 +285,14 @@ class InventoryApp(ctk.CTk):
         """Mở công cụ tra cứu dữ liệu đã lưu trữ."""
         dialog = ArchiveExplorerDialog(self)
     # ===================================
+
+    def open_deleted_vehicles(self):
+        """Mở công cụ quản lý xe đã xóa."""
+        dialog = DeletedVehiclesDialog(
+            self,
+            vehicle_manager=self.vehicle_manager,
+            on_restore_callback=self.on_data_changed
+        )
 
     def prompt_for_history_export(self):
         dialog = DateRangeDialog(self, title=self.get_translation("menu_export_history"))

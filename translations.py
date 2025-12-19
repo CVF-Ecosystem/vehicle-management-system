@@ -280,6 +280,8 @@ translations = {
     "msgbox_fill_all_paths": {"vi": "Vui lòng điền đầy đủ các đường dẫn file.", "en": "Please fill in all file paths."},
     "msgbox_creation_complete_title": {"vi": "Hoàn tất", "en": "Completed"},
     "msgbox_creation_complete_prompt": {"vi": "Tạo phiếu thành công!\nBạn có muốn mở file không?", "en": "Transfer slips generated successfully!\nDo you want to open the file?"},
+    # === BỔ SUNG: Key cho Công cụ Quản lý xe đã xóa ===
+    "menu_deleted_vehicles": {"vi": "Quản lý xe đã xóa", "en": "Manage Deleted Vehicles"},
     # === BỔ SUNG: Key cho Công cụ Tra cứu Lưu trữ ===
     "menu_archive_explorer": {"vi": "Tra cứu dữ liệu lưu trữ", "en": "Explore Archived Data"},
     "dialog_archive_explorer_title": {"vi": "Tra cứu", "en": "Explorer"},
