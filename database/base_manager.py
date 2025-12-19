@@ -17,7 +17,7 @@ from exceptions import (
 logger = logging.getLogger(__name__)
 
 # Whitelist các tên bảng và cột hợp lệ trong hệ thống
-VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations', 'deleted_vehicles_archive', 'audit_logs'}
+VALID_TABLE_NAMES = {'vehicles', 'drivers', 'transport_vehicles', 'dispatches', 'locations', 'deleted_vehicles_archive', 'audit_logs', 'users', 'login_history'}
 VALID_COLUMN_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 class BaseManager:
@@ -162,6 +162,38 @@ class BaseManager:
                 )
             """)
             
+            # Phase 1C: Users table for authentication
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    full_name TEXT,
+                    role TEXT NOT NULL DEFAULT 'operator',
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    created_by INTEGER REFERENCES users(id),
+                    last_login TEXT,
+                    failed_login_attempts INTEGER DEFAULT 0,
+                    locked_until TEXT
+                )
+            """)
+            
+            # Phase 1C: Login history for security audit
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS login_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER REFERENCES users(id),
+                    username TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    failure_reason TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            
             self._create_indexes_if_needed()
 
         logger.info("Schema CSDL đã được cập nhật.")
@@ -248,6 +280,13 @@ class BaseManager:
             # Phase 1B: Index for archive table
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_archive_vin ON deleted_vehicles_archive (vin)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_archive_deleted_at ON deleted_vehicles_archive (hard_deleted_at)")
+            
+            # Phase 1C: Index for users and login_history
+            self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users (is_active)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history (user_id)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_login_history_created ON login_history (created_at)")
 
     def begin_transaction(self):
         """Bắt đầu một giao dịch CSDL."""

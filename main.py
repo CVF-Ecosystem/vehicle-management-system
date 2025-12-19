@@ -34,6 +34,12 @@ from ui.voucher_creation_dialog import VoucherCreationDialog
 from ui.archive_explorer_dialog import ArchiveExplorerDialog # Đảm bảo import này tồn tại
 from ui.deleted_vehicles_dialog import DeletedVehiclesDialog
 from config import APP_VERSION, APP_NAME, FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_LARGE, FONT_SIZE_SMALL
+
+# Phase 1C: Auth imports
+from auth.auth_manager import AuthManager
+from auth.permissions import Permission, get_role_display_name
+from ui.login_dialog import LoginDialog, ChangePasswordDialog
+from ui.user_management_dialog import UserManagementDialog, LoginHistoryDialog
 class InventoryApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -63,6 +69,33 @@ class InventoryApp(ctk.CTk):
         self.font_large_bold = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_LARGE, weight="bold")
         # -------------------------------------------------
         
+        # Phase 1C: Initialize Auth Manager
+        self.auth_manager = AuthManager.get_instance()
+        
+        # Show login dialog first
+        self._show_login_dialog()
+
+    def _show_login_dialog(self):
+        """Hiển thị dialog đăng nhập."""
+        # Withdraw main window until login
+        self.withdraw()
+        
+        # Wait for window to be ready
+        self.after(100, self._open_login)
+    
+    def _open_login(self):
+        """Mở dialog đăng nhập."""
+        login_dialog = LoginDialog(self, on_success_callback=self._on_login_success)
+        login_dialog.wait_window()
+    
+    def _on_login_success(self, user: dict):
+        """Callback khi đăng nhập thành công."""
+        logging.info(f"Đăng nhập thành công: {user['username']} ({user['role']})")
+        
+        # Show main window
+        self.deiconify()
+        
+        # Build UI
         self._build_ui()
         
         logging.info(f"Ứng dụng {APP_VERSION} đã khởi động thành công.")
@@ -104,6 +137,7 @@ class InventoryApp(ctk.CTk):
         self.file_menu = Menu(self.main_menu, tearoff=0, font=menu_font)
         self.tools_menu = Menu(self.main_menu, tearoff=0, font=menu_font)
         self.settings_menu = Menu(self.main_menu, tearoff=0, font=menu_font)
+        self.user_menu = Menu(self.main_menu, tearoff=0, font=menu_font)  # Phase 1C: User menu
         self.lang_menu = Menu(self.settings_menu, tearoff=0, font=menu_font)
         self.theme_menu = Menu(self.settings_menu, tearoff=0, font=menu_font)
         self.configure(menu=self.main_menu)
@@ -114,12 +148,18 @@ class InventoryApp(ctk.CTk):
         self.file_menu.delete(0, "end")
         self.tools_menu.delete(0, "end")
         self.settings_menu.delete(0, "end")
+        self.user_menu.delete(0, "end")  # Phase 1C
         self.lang_menu.delete(0, "end")
         self.theme_menu.delete(0, "end")
 
         self.main_menu.add_cascade(label=self.get_translation("menu_file"), menu=self.file_menu)
         self.main_menu.add_cascade(label=self.get_translation("menu_tools"), menu=self.tools_menu)
         self.main_menu.add_cascade(label=self.get_translation("menu_settings"), menu=self.settings_menu)
+        
+        # Phase 1C: User menu
+        current_user = self.auth_manager.get_current_user()
+        user_menu_label = f"👤 {current_user['username']}" if current_user else "👤 Tài khoản"
+        self.main_menu.add_cascade(label=user_menu_label, menu=self.user_menu)
 
         self.file_menu.add_command(label=self.get_translation("menu_exit"), command=self.on_close)
         self.tools_menu.add_command(label=self.get_translation("menu_create_vouchers"), command=self.open_voucher_creation_tool)
@@ -128,6 +168,15 @@ class InventoryApp(ctk.CTk):
         self.tools_menu.add_separator()
         self.tools_menu.add_command(label=self.get_translation("menu_deleted_vehicles"), command=self.open_deleted_vehicles)
         # ===================
+
+        # Phase 1C: User menu items
+        self.user_menu.add_command(label="🔑 Đổi mật khẩu", command=self._open_change_password)
+        if self.auth_manager.has_permission(Permission.USER_VIEW):
+            self.user_menu.add_command(label="👥 Quản lý người dùng", command=self._open_user_management)
+        if self.auth_manager.has_permission(Permission.AUDIT_VIEW):
+            self.user_menu.add_command(label="📋 Lịch sử đăng nhập", command=self._open_login_history)
+        self.user_menu.add_separator()
+        self.user_menu.add_command(label="🚪 Đăng xuất", command=self._logout)
 
 
         self.settings_menu.add_cascade(label=self.get_translation("menu_language"), menu=self.lang_menu)
@@ -180,6 +229,33 @@ class InventoryApp(ctk.CTk):
         self.status_var = ctk.StringVar(value=self.get_translation("status_ready"))
         self.status_label = ctk.CTkLabel(status_bar_frame, textvariable=self.status_var, anchor="w", font=self.font_normal)
         self.status_label.pack(side="left", fill="x", expand=True, padx=10)
+        
+        # Phase 1C: User info display
+        current_user = self.auth_manager.get_current_user()
+        if current_user:
+            role_display = get_role_display_name(current_user['role'])
+            user_text = f"👤 {current_user['username']} ({role_display})"
+            self.user_label = ctk.CTkLabel(
+                status_bar_frame,
+                text=user_text,
+                anchor="e",
+                font=self.font_normal,
+                text_color="#3498db"
+            )
+            self.user_label.pack(side="right", padx=(0, 10))
+            
+            # Logout button
+            logout_btn = ctk.CTkButton(
+                status_bar_frame,
+                text="🚪",
+                width=30,
+                height=25,
+                fg_color="transparent",
+                hover_color="#e74c3c",
+                command=self._logout
+            )
+            logout_btn.pack(side="right", padx=(0, 5))
+        
         self.author_label = ctk.CTkLabel(status_bar_frame, text=self.get_translation("author_credit"), anchor="e", font=self.font_normal)
         self.author_label.pack(side="right", padx=10)
 
@@ -196,6 +272,32 @@ class InventoryApp(ctk.CTk):
         theme = self.current_theme.get()
         ctk.set_appearance_mode(theme)
         self.config.set("Settings", "theme", theme)
+
+    # Phase 1C: Auth methods
+    def _logout(self):
+        """Đăng xuất khỏi ứng dụng."""
+        if messagebox.askyesno("Xác nhận", "Bạn có chắc muốn đăng xuất?"):
+            self.auth_manager.logout()
+            logging.info("Người dùng đã đăng xuất")
+            
+            # Restart app with login
+            self.withdraw()
+            self._open_login()
+    
+    def _open_change_password(self):
+        """Mở dialog đổi mật khẩu."""
+        dialog = ChangePasswordDialog(self)
+    
+    def _open_user_management(self):
+        """Mở dialog quản lý người dùng (Admin only)."""
+        if not self.auth_manager.has_permission(Permission.USER_VIEW):
+            messagebox.showerror("Lỗi", "Bạn không có quyền truy cập chức năng này!")
+            return
+        dialog = UserManagementDialog(self)
+    
+    def _open_login_history(self):
+        """Mở dialog xem lịch sử đăng nhập."""
+        dialog = LoginHistoryDialog(self)
 
     def on_tab_change(self):
         """Xử lý sự kiện khi người dùng chuyển tab (Lazy Loading)."""
