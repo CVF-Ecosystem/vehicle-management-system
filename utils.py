@@ -5,6 +5,7 @@ import configparser
 import os
 import json
 from datetime import datetime
+from uuid import uuid4
 from config import CONFIG_FILE, LOGS_DIR, OWNER_MAP_FILE
 
 # Module-level logger
@@ -82,12 +83,22 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         config["Settings"] = {"language": "vi", "theme": "System"}
         config["Paths"] = {"voucher_template_path": ""}
+        config["Site"] = {"site_code": "SITE_001", "site_instance_id": str(uuid4())}
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             config.write(f)
     else:
         config.read(CONFIG_FILE, encoding="utf-8")
         if not config.has_section("Paths"):
             config.add_section("Paths")
+        if not config.has_section("Site"):
+            config.add_section("Site")
+        if not config.has_option("Site", "site_code"):
+            config.set("Site", "site_code", "SITE_001")
+
+        if not config.has_option("Site", "site_instance_id"):
+            config.set("Site", "site_instance_id", str(uuid4()))
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                config.write(f)
             
     return config
 

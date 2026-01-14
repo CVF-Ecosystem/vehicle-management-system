@@ -4,7 +4,7 @@ from tkinter import filedialog, messagebox
 import os
 import threading
 from config import ARCHIVES_DIR
-from ui.components import DateRangeDialog
+from ui.components import DateRangeDialog, harmonize_combobox_style
 from report_generators import excel_generator
 import utils
 
@@ -25,6 +25,7 @@ class ArchiveExplorerDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text=self.app.get_translation("lbl_select_archive_file"), font=self.app.font_normal).grid(row=0, column=0, padx=5, pady=10, sticky="w")
         self.archive_file_combo = ctk.CTkComboBox(main_frame, values=[], font=self.app.font_normal)
         self.archive_file_combo.grid(row=0, column=1, padx=5, pady=10, sticky="ew")
+        harmonize_combobox_style(self.archive_file_combo)
 
         ctk.CTkLabel(main_frame, text=self.app.get_translation("lbl_time_period"), font=self.app.font_normal).grid(row=1, column=0, padx=5, pady=10, sticky="w")
         self.date_range_label = ctk.CTkLabel(main_frame, text=self.app.get_translation("lbl_not_selected"), font=self.app.font_normal)

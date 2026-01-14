@@ -6,13 +6,18 @@ import logging
 import threading
 import os
 import webbrowser
+import json
+import tempfile
 
 from data_normalizer import normalizer
 import excel_importer
 from report_generators import pdf_generator
 from config import PAD_GENERAL, PAD_SMALL
 from ui.camera_scanner import CameraScannerDialog
-from ui.components import add_right_click_menu # === BỔ SUNG MỚI ===
+from ui.components import add_right_click_menu, AutocompleteEntry, harmonize_combobox_style  # === BỔ SUNG MỚI ===
+
+# Auto-save draft file path
+DRAFT_FILE = os.path.join(tempfile.gettempdir(), "vehicle_mgmt_inbound_draft.json")
 
 class InboundTab:
     def __init__(self, parent_frame, app_instance):
@@ -39,25 +44,38 @@ class InboundTab:
         vin_frame.grid(row=1, column=1, columnspan=2, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
         vin_frame.grid_columnconfigure(0, weight=1)
         
-        self.vin_entry = ctk.CTkEntry(vin_frame, font=self.app.font_normal)
+        # === PHASE 2.5: AutocompleteEntry for VIN ===
+        self.vin_entry = AutocompleteEntry(
+            vin_frame,
+            suggestions=self._get_vin_suggestions,
+            font=self.app.font_normal,
+            placeholder_text=self.app.get_translation("autocomplete_vin_hint") if hasattr(self.app, 'get_translation') else ""
+        )
         self.vin_entry.grid(row=0, column=0, sticky="ew")
-        add_right_click_menu(self.app, self.vin_entry) # === BỔ SUNG MỚI ===
+        add_right_click_menu(self.app, self.vin_entry.entry)
 
         self.btn_open_camera = ctk.CTkButton(vin_frame, text="📷", width=30, command=self.open_camera_scanner)
         self.btn_open_camera.grid(row=0, column=1, padx=(PAD_SMALL, 0))
 
         self.lbl_owner = ctk.CTkLabel(manual_frame, text="", font=self.app.font_normal)
         self.lbl_owner.grid(row=2, column=0, padx=PAD_SMALL, pady=PAD_SMALL, sticky="w")
-        self.owner_combo = ctk.CTkComboBox(manual_frame, values=[], font=self.app.font_normal)
-        self.owner_combo.grid(row=2, column=1, columnspan=2, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
-        self.owner_combo.set("")
-        self.owner_combo.bind("<<ComboboxSelected>>", self._on_owner_selected)
-        add_right_click_menu(self.app, self.owner_combo) # === BỔ SUNG MỚI ===
+        # === PHASE 2.5: AutocompleteEntry for owner ===
+        self.owner_entry = AutocompleteEntry(
+            manual_frame, 
+            suggestions=self._get_owner_suggestions,
+            font=self.app.font_normal,
+            placeholder_text=self.app.get_translation("autocomplete_owner_hint") if hasattr(self.app, 'get_translation') else ""
+        )
+        self.owner_entry.grid(row=2, column=1, columnspan=2, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
+        self.owner_entry.bind("<<AutocompleteSelected>>", self._on_owner_selected)
+        add_right_click_menu(self.app, self.owner_entry.entry)
+        # === END PHASE 2.5 ===
 
         self.lbl_vehicle_type = ctk.CTkLabel(manual_frame, text="", font=self.app.font_normal)
         self.lbl_vehicle_type.grid(row=3, column=0, padx=PAD_SMALL, pady=PAD_SMALL, sticky="w")
         self.type_combo = ctk.CTkComboBox(manual_frame, values=[], font=self.app.font_normal)
         self.type_combo.grid(row=3, column=1, columnspan=2, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
+        harmonize_combobox_style(self.type_combo)
         self.type_combo.set("")
         add_right_click_menu(self.app, self.type_combo) # === BỔ SUNG MỚI ===
 
@@ -65,6 +83,7 @@ class InboundTab:
         self.lbl_location.grid(row=4, column=0, padx=PAD_SMALL, pady=PAD_SMALL, sticky="w")
         self.location_combo = ctk.CTkComboBox(manual_frame, values=[], command=self._on_location_select, font=self.app.font_normal)
         self.location_combo.grid(row=4, column=1, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
+        harmonize_combobox_style(self.location_combo)
         self.location_combo.set("")
         add_right_click_menu(self.app, self.location_combo) # === BỔ SUNG MỚI ===
         
@@ -83,23 +102,126 @@ class InboundTab:
 
         bulk_frame = ctk.CTkFrame(self.parent)
         bulk_frame.grid(row=1, column=0, padx=PAD_GENERAL, pady=(PAD_SMALL, PAD_GENERAL), sticky="nsew")
-        bulk_frame.grid_columnconfigure(1, weight=1)
-        bulk_frame.grid_rowconfigure(1, weight=1)
+        bulk_frame.grid_columnconfigure(0, weight=1)
+        bulk_frame.grid_rowconfigure(2, weight=1)
 
         self.lbl_bulk_import = ctk.CTkLabel(bulk_frame, text="", font=self.app.font_bold)
-        self.lbl_bulk_import.grid(row=0, column=0, columnspan=2, padx=PAD_SMALL, pady=(PAD_SMALL, PAD_GENERAL), sticky="w")
+        self.lbl_bulk_import.grid(row=0, column=0, padx=PAD_SMALL, pady=(PAD_SMALL, 0), sticky="w")
 
-        self.btn_import = ctk.CTkButton(bulk_frame, text="", command=self.import_excel, font=self.app.font_normal)
-        self.btn_import.grid(row=1, column=0, padx=PAD_GENERAL, pady=PAD_SMALL, sticky="nw")
+        # Row 1: Nút Import + Progress (inline)
+        import_row = ctk.CTkFrame(bulk_frame, fg_color="transparent")
+        import_row.grid(row=1, column=0, padx=PAD_GENERAL, pady=(PAD_SMALL, 0), sticky="ew")
+        import_row.grid_columnconfigure(1, weight=1)
 
-        self.inbound_log_text = ctk.CTkTextbox(bulk_frame, wrap="word", state="disabled", font=("Courier New", 12))
-        self.inbound_log_text.grid(row=1, column=1, padx=(0, PAD_GENERAL), pady=PAD_SMALL, sticky="nsew")
+        self.btn_import = ctk.CTkButton(import_row, text="", command=self.import_excel, font=self.app.font_normal, width=140)
+        self.btn_import.grid(row=0, column=0, sticky="w")
+
+        # Progress label + bar (ẩn mặc định, hiện khi import) - cùng hàng với nút
+        self.progress_label = ctk.CTkLabel(import_row, text="", font=self.app.font_small)
+        self.progress_label.grid(row=0, column=1, padx=(PAD_GENERAL, 0), sticky="w")
+        self.progress_label.grid_remove()
+
+        self.progress_bar = ctk.CTkProgressBar(import_row, width=200)
+        self.progress_bar.grid(row=0, column=2, padx=(PAD_SMALL, 0), sticky="e")
+        self.progress_bar.set(0)
+        self.progress_bar.grid_remove()
+
+        # Row 2: Log textbox - full width, expandable (ngay dưới nút Import)
+        self.inbound_log_text = ctk.CTkTextbox(bulk_frame, wrap="word", state="disabled", font=("Consolas", 11), height=150)
+        self.inbound_log_text.grid(row=2, column=0, padx=PAD_GENERAL, pady=(PAD_SMALL, PAD_SMALL), sticky="nsew")
         self.inbound_log_text.tag_config("error", foreground="red")
         self.inbound_log_text.tag_config("info", foreground="#00A0E5")
         add_right_click_menu(self.app, self.inbound_log_text) # === BỔ SUNG MỚI ===
 
         self.update_language()
         self.update_dropdowns()
+        
+        # === Auto-save draft: Setup ===
+        self._draft_timer = None
+        self._setup_autosave()
+        self._restore_draft()
+
+    def _setup_autosave(self):
+        """Setup auto-save triggers on entry changes."""
+        def on_change(*args):
+            self._schedule_draft_save()
+        
+        # Bind to entry changes
+        self.vin_entry.entry.bind("<KeyRelease>", on_change)
+        self.owner_entry.entry.bind("<KeyRelease>", on_change)
+        self.type_combo.bind("<<ComboboxSelected>>", on_change)
+        self.location_combo.bind("<<ComboboxSelected>>", on_change)
+    
+    def _schedule_draft_save(self):
+        """Schedule draft save with debounce (save after 1 second of inactivity)."""
+        if self._draft_timer:
+            self.app.after_cancel(self._draft_timer)
+        self._draft_timer = self.app.after(1000, self._save_draft)
+    
+    def _save_draft(self):
+        """Save current form data to draft file."""
+        try:
+            draft_data = {
+                "vin": self.vin_entry.get(),
+                "owner": self.owner_entry.get(),
+                "vehicle_type": self.type_combo.get(),
+                "location": self.location_combo.get(),
+                "timestamp": datetime.now().isoformat()
+            }
+            # Only save if there's actual data
+            if any([draft_data["vin"], draft_data["owner"], draft_data["vehicle_type"]]):
+                with open(DRAFT_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(draft_data, f, ensure_ascii=False)
+                logging.debug(f"Draft saved: {draft_data}")
+        except Exception as e:
+            logging.warning(f"Could not save draft: {e}")
+    
+    def _restore_draft(self):
+        """Restore draft data if exists and ask user to recover."""
+        try:
+            if os.path.exists(DRAFT_FILE):
+                with open(DRAFT_FILE, 'r', encoding='utf-8') as f:
+                    draft_data = json.load(f)
+                
+                # Check if draft has data
+                if any([draft_data.get("vin"), draft_data.get("owner"), draft_data.get("vehicle_type")]):
+                    # Ask user if they want to restore
+                    timestamp = draft_data.get("timestamp", "")
+                    restore_msg = self.app.get_translation("draft_restore_prompt").format(
+                        vin=draft_data.get("vin", ""),
+                        owner=draft_data.get("owner", ""),
+                        time=timestamp[:19].replace("T", " ") if timestamp else ""
+                    )
+                    if messagebox.askyesno(
+                        self.app.get_translation("draft_restore_title"),
+                        restore_msg,
+                        parent=self.app
+                    ):
+                        # Restore data
+                        if draft_data.get("vin"):
+                            self.vin_entry.delete(0, "end")
+                            self.vin_entry.insert(0, draft_data["vin"])
+                        if draft_data.get("owner"):
+                            self.owner_entry.delete(0, "end")
+                            self.owner_entry.insert(0, draft_data["owner"])
+                        if draft_data.get("vehicle_type"):
+                            self.type_combo.set(draft_data["vehicle_type"])
+                        if draft_data.get("location"):
+                            self.location_combo.set(draft_data["location"])
+                            self._on_location_select(draft_data["location"])
+                    
+                    # Clear draft after restore prompt
+                    self._clear_draft()
+        except Exception as e:
+            logging.warning(f"Could not restore draft: {e}")
+    
+    def _clear_draft(self):
+        """Clear the draft file."""
+        try:
+            if os.path.exists(DRAFT_FILE):
+                os.remove(DRAFT_FILE)
+        except Exception:
+            pass
 
     def update_language(self):
         self.lbl_manual_entry.configure(text=self.app.get_translation("frame_manual_entry"))
@@ -112,16 +234,31 @@ class InboundTab:
         self.lbl_bulk_import.configure(text=self.app.get_translation("frame_bulk_import"))
         self.btn_import.configure(text=self.app.get_translation("btn_import_excel"))
 
+    # === PHASE 2.5: Autocomplete suggestions ===
+    def _get_vin_suggestions(self):
+        """Lấy danh sách VIN đang trong kho cho gợi ý tự động (hỗ trợ nhập lại)."""
+        try:
+            # Gợi ý VIN từ xe đang trong kho để hỗ trợ nhập lại
+            vehicles = self.vehicle_manager.get_in_stock()
+            return [v['vin'] for v in vehicles if v.get('vin')]
+        except Exception:
+            return []
+    
+    def _get_owner_suggestions(self):
+        """Lấy danh sách chủ hàng cho gợi ý tự động."""
+        return self.vehicle_manager.get_distinct_owners()
+    # === END PHASE 2.5 ===
+
     def open_camera_scanner(self):
         dialog = CameraScannerDialog(self.app)
         if dialog.result:
             self.vin_entry.delete(0, "end")
             self.vin_entry.insert(0, dialog.result)
-            self.owner_combo.focus()
+            self.owner_entry.focus()  # Phase 2.5: Changed from owner_combo
 
     def update_dropdowns(self):
-        owners = self.vehicle_manager.get_distinct_owners()
-        self.owner_combo.configure(values=owners)
+        # Phase 2.5: Owner suggestions are handled by AutocompleteEntry
+        # owners = self.vehicle_manager.get_distinct_owners()
         
         all_vehicle_types = self.vehicle_manager.get_distinct_vehicle_types()
         self.type_combo.configure(values=all_vehicle_types)
@@ -133,7 +270,7 @@ class InboundTab:
         self.lbl_location_info.configure(text="")
 
     def _on_owner_selected(self, event=None):
-        selected_owner = self.owner_combo.get()
+        selected_owner = self.owner_entry.get()  # Phase 2.5: Changed from owner_combo
         if selected_owner:
             specific_vehicle_types = self.vehicle_manager.get_distinct_vehicle_types(owner_filter=selected_owner)
             self.type_combo.configure(values=specific_vehicle_types)
@@ -166,7 +303,7 @@ class InboundTab:
 
     def add_vehicle(self):
         raw_vin = self.vin_entry.get().strip()
-        owner = normalizer.normalize_owner(self.owner_combo.get())
+        owner = normalizer.normalize_owner(self.owner_entry.get())  # Phase 2.5: Changed from owner_combo
         vehicle_type = normalizer.normalize_vehicle_type(self.type_combo.get())
         
         # Validate VIN
@@ -212,8 +349,11 @@ class InboundTab:
             
             self.app.on_data_changed()
             
+            # Clear draft after successful save
+            self._clear_draft()
+            
             self.vin_entry.delete(0, "end")
-            self.owner_combo.set("")
+            self.owner_entry.delete(0, "end")  # Phase 2.5: Changed from owner_combo.set("")
             self.type_combo.set("")
             
             self.vin_entry.focus()
@@ -256,13 +396,39 @@ class InboundTab:
         self.inbound_log_text.configure(state="normal")
         self.inbound_log_text.delete("1.0", "end")
         self.inbound_log_text.configure(state="disabled")
+        
+        # Show progress bar
+        self.progress_bar.set(0)
+        self.progress_label.configure(text=self.app.get_translation("import_reading_file") if hasattr(self.app, 'get_translation') else "Reading file...")
+        self.progress_bar.grid()
+        self.progress_label.grid()
+        self.btn_import.configure(state="disabled")
+        
+        def progress_callback(current, total, message=""):
+            """Callback to update progress bar from worker thread."""
+            def update():
+                if not self.parent.winfo_exists(): return
+                progress = current / total if total > 0 else 0
+                self.progress_bar.set(progress)
+                if message:
+                    self.progress_label.configure(text=message)
+                else:
+                    self.progress_label.configure(text=f"{current}/{total}")
+            if self.parent.winfo_exists():
+                self.app.after(0, update)
 
         def worker():
             res = excel_importer.import_vehicles_from_excel(
-                path, self.vehicle_manager, self.location_manager, normalizer.normalize_owner
+                path, self.vehicle_manager, self.location_manager, normalizer.normalize_owner,
+                progress_callback=progress_callback
             )
             def update_ui():
                 if not self.parent.winfo_exists(): return
+                
+                # Hide progress bar
+                self.progress_bar.grid_remove()
+                self.progress_label.grid_remove()
+                self.btn_import.configure(state="normal")
                 
                 for error_detail in res["error_details"]:
                     self.app.log_to_widget(self.inbound_log_text, error_detail, "error")

@@ -33,6 +33,14 @@ from typing import Optional, Dict, List, Tuple, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+try:
+    from cryptography.fernet import Fernet
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("cryptography library not available - backup encryption disabled")
+
 import config
 from exceptions import (
     BackupError,
@@ -68,12 +76,16 @@ class BackupMetadata:
     checksum: str
     tables_count: int
     records_summary: Dict[str, int]
+    is_encrypted: bool = False  # SECURITY FIX Issue #8
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'BackupMetadata':
+        # Handle old backups without is_encrypted field
+        if 'is_encrypted' not in data:
+            data['is_encrypted'] = False
         return cls(**data)
 
 
@@ -104,6 +116,8 @@ class BackupService:
         backup_dir: Optional[str] = None,
         max_auto_backups: int = DEFAULT_MAX_AUTO_BACKUPS,
         max_manual_backups: int = DEFAULT_MAX_MANUAL_BACKUPS,
+        enable_encryption: bool = True,  # SECURITY FIX Issue #8
+        encryption_key: Optional[str] = None,  # If None, will generate
     ):
         """
         Initialize BackupService.
@@ -113,6 +127,8 @@ class BackupService:
             backup_dir: Root backup directory. Defaults to project-root/backups/.
             max_auto_backups: Maximum number of auto backups to keep.
             max_manual_backups: Maximum number of manual backups to keep.
+            enable_encryption: Enable AES-256 encryption for backups (requires cryptography).
+            encryption_key: Base64-encoded Fernet key. If None, reads from environment or generates.
         """
 
         # Anchor to project root so backups are predictable even if CWD changes.
@@ -127,16 +143,126 @@ class BackupService:
         self.max_auto_backups = max_auto_backups
         self.max_manual_backups = max_manual_backups
         
+        # SECURITY FIX Issue #8: Encryption setup
+        self.enable_encryption = enable_encryption and ENCRYPTION_AVAILABLE
+        self.encryption_key = None
+        self.cipher = None
+        
+        if self.enable_encryption:
+            self._setup_encryption(encryption_key)
+        else:
+            if enable_encryption and not ENCRYPTION_AVAILABLE:
+                logger.warning(
+                    "Encryption requested but cryptography library not available. "
+                    "Install with: pip install cryptography"
+                )
+        
         # Ensure backup directories exist
         self._ensure_directories()
         
-        logger.info(f"BackupService initialized. DB: {self.db_path}, Backup dir: {self.backup_dir}")
+        logger.info(
+            f"BackupService initialized. DB: {self.db_path}, Backup dir: {self.backup_dir}, "
+            f"Encryption: {'Enabled' if self.enable_encryption else 'Disabled'}"
+        )
     
     def _ensure_directories(self) -> None:
         """Tạo các thư mục backup nếu chưa tồn tại."""
         for directory in [self.backup_dir, self.auto_backup_dir, self.manual_backup_dir]:
             directory.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Ensured directory exists: {directory}")
+    
+    def _setup_encryption(self, encryption_key: Optional[str] = None) -> None:
+        """
+        Setup encryption for backups (SECURITY FIX Issue #8).
+        
+        Args:
+            encryption_key: Base64-encoded Fernet key or None to generate/load from env
+        """
+        if not ENCRYPTION_AVAILABLE:
+            logger.error("Cannot setup encryption: cryptography library not available")
+            self.enable_encryption = False
+            return
+        
+        # Priority: parameter > environment variable > generate new
+        if encryption_key:
+            self.encryption_key = encryption_key.encode()
+        elif os.getenv('BACKUP_ENCRYPTION_KEY'):
+            self.encryption_key = os.getenv('BACKUP_ENCRYPTION_KEY').encode()
+        else:
+            # Generate new key and warn user to save it
+            self.encryption_key = Fernet.generate_key()
+            key_file = self.backup_dir / '.backup_encryption_key'
+            
+            try:
+                key_file.write_bytes(self.encryption_key)
+                key_file.chmod(0o600)  # Owner read/write only
+                logger.warning(
+                    f"Generated new encryption key and saved to: {key_file}\n"
+                    f"IMPORTANT: Backup this key securely! Without it, encrypted backups cannot be restored.\n"
+                    f"Consider setting BACKUP_ENCRYPTION_KEY environment variable instead."
+                )
+            except Exception as e:
+                logger.error(f"Failed to save encryption key: {e}")
+        
+        try:
+            self.cipher = Fernet(self.encryption_key)
+            logger.info("Backup encryption enabled with AES-256")
+        except Exception as e:
+            logger.error(f"Failed to initialize Fernet cipher: {e}")
+            self.enable_encryption = False
+    
+    def _encrypt_file(self, file_path: Path) -> Path:
+        """Encrypt backup file in-place and return encrypted path."""
+        if not self.enable_encryption or not self.cipher:
+            return file_path
+        
+        try:
+            # Read original file
+            with open(file_path, 'rb') as f:
+                data = f.read()
+            
+            # Encrypt
+            encrypted_data = self.cipher.encrypt(data)
+            
+            # Write encrypted data
+            encrypted_path = file_path.with_suffix(file_path.suffix + '.enc')
+            with open(encrypted_path, 'wb') as f:
+                f.write(encrypted_data)
+            
+            # Remove original unencrypted file
+            file_path.unlink()
+            
+            logger.info(f"Encrypted backup: {encrypted_path.name}")
+            return encrypted_path
+            
+        except Exception as e:
+            logger.error(f"Failed to encrypt backup file: {e}")
+            return file_path
+    
+    def _decrypt_file(self, encrypted_path: Path, output_path: Path) -> bool:
+        """Decrypt backup file to output path."""
+        if not self.cipher:
+            logger.error("Cannot decrypt: cipher not initialized")
+            return False
+        
+        try:
+            # Read encrypted file
+            with open(encrypted_path, 'rb') as f:
+                encrypted_data = f.read()
+            
+            # Decrypt
+            decrypted_data = self.cipher.decrypt(encrypted_data)
+            
+            # Write decrypted data
+            with open(output_path, 'wb') as f:
+                f.write(decrypted_data)
+            
+            logger.info(f"Decrypted backup to: {output_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to decrypt backup file: {e}")
+            return False
     
     def _get_backup_dir_for_type(self, backup_type: BackupType) -> Path:
         """Lấy thư mục backup phù hợp với loại backup."""

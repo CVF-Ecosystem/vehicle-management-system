@@ -28,11 +28,12 @@ class EntityManager(BaseManager):
             # Xử lý giá trị cccd rỗng thành NULL để tránh lỗi UNIQUE
             cccd_to_insert = cccd if cccd else None
             with self.conn:
-                self.conn.execute(
+                cursor = self.conn.execute(
                     "INSERT INTO drivers (name, phone, cccd, notes) VALUES (?, ?, ?, ?)",
                     (name, phone, cccd_to_insert, notes)
                 )
-            return {"success": True, "message": "Thêm tài xế thành công."}
+                driver_id = cursor.lastrowid
+            return {"success": True, "message": "Thêm tài xế thành công.", "id": driver_id}
         except sqlite3.IntegrityError as e:
             if "UNIQUE constraint failed: drivers.name" in str(e):
                 return {"success": False, "message": f"Tên tài xế '{name}' đã tồn tại."}
@@ -87,8 +88,12 @@ class EntityManager(BaseManager):
         """Thêm một xe vận chuyển mới."""
         try:
             with self.conn:
-                self.conn.execute("INSERT INTO transport_vehicles (license_plate, type, notes) VALUES (?, ?, ?)", (license_plate, vehicle_type, notes))
-            return {"success": True, "message": "Thêm xe vận chuyển thành công."}
+                cursor = self.conn.execute(
+                    "INSERT INTO transport_vehicles (license_plate, type, notes) VALUES (?, ?, ?)",
+                    (license_plate, vehicle_type, notes)
+                )
+                vehicle_id = cursor.lastrowid
+            return {"success": True, "message": "Thêm xe vận chuyển thành công.", "id": vehicle_id}
         except sqlite3.IntegrityError:
             return {"success": False, "message": f"Biển số xe '{license_plate}' đã tồn tại."}
         except Exception as e:

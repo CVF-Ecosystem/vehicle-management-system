@@ -39,6 +39,8 @@ def format_datetime(dt: datetime) -> str:
     return dt.strftime("%d/%m/%Y %H:%M:%S")
 
 
+from translations import get_translation
+
 class BackupDialog(ctk.CTkToplevel):
     """
     Dialog quản lý backup và restore.
@@ -52,10 +54,12 @@ class BackupDialog(ctk.CTkToplevel):
     """
     
     def __init__(
-        self, 
-        parent, 
+        self,
+        parent,
         backup_service: BackupService,
-        on_restore_callback: Optional[Callable] = None
+        on_restore_callback: Optional[Callable] = None,
+        lang: str = 'vi',
+        get_t: Callable = None
     ):
         """
         Khởi tạo BackupDialog.
@@ -71,9 +75,11 @@ class BackupDialog(ctk.CTkToplevel):
         self.parent = parent
         self.backup_service = backup_service
         self.on_restore_callback = on_restore_callback
+        self.lang = lang
+        self._t = get_t if get_t else (lambda key: get_translation(key, self.lang))
         
         # Window config
-        self.title("Sao lưu & Phục hồi dữ liệu")
+        self.title(self._t("dialog_backup_title"))
         self.geometry("900x600")
         self.minsize(800, 500)
         
@@ -115,8 +121,8 @@ class BackupDialog(ctk.CTkToplevel):
         header_frame.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(
-            header_frame, 
-            text="📦 Danh sách bản sao lưu",
+            header_frame,
+            text="📦 " + self._t("backup_list_header"),
             font=self.font_bold
         ).grid(row=0, column=0, sticky="w")
         
@@ -127,17 +133,15 @@ class BackupDialog(ctk.CTkToplevel):
         self.filter_var = ctk.StringVar(value="all")
         
         ctk.CTkRadioButton(
-            filter_frame, text="Tất cả", variable=self.filter_var,
+            filter_frame, text=self._t("filter_all"), variable=self.filter_var,
             value="all", command=self._on_filter_changed
         ).pack(side="left", padx=5)
-        
         ctk.CTkRadioButton(
-            filter_frame, text="Thủ công", variable=self.filter_var,
+            filter_frame, text=self._t("filter_manual"), variable=self.filter_var,
             value="manual", command=self._on_filter_changed
         ).pack(side="left", padx=5)
-        
         ctk.CTkRadioButton(
-            filter_frame, text="Tự động", variable=self.filter_var,
+            filter_frame, text=self._t("filter_auto"), variable=self.filter_var,
             value="auto", command=self._on_filter_changed
         ).pack(side="left", padx=5)
         
@@ -157,10 +161,10 @@ class BackupDialog(ctk.CTkToplevel):
         )
         
         # Configure columns
-        self.backup_tree.heading("type", text="Loại")
-        self.backup_tree.heading("created", text="Ngày tạo")
-        self.backup_tree.heading("size", text="Kích thước")
-        self.backup_tree.heading("records", text="Số xe")
+        self.backup_tree.heading("type", text=self._t("col_type"))
+        self.backup_tree.heading("created", text=self._t("col_created"))
+        self.backup_tree.heading("size", text=self._t("col_size"))
+        self.backup_tree.heading("records", text=self._t("col_records"))
         
         self.backup_tree.column("type", width=80, anchor="center")
         self.backup_tree.column("created", width=150, anchor="center")
@@ -185,7 +189,7 @@ class BackupDialog(ctk.CTkToplevel):
         
         self.btn_create = ctk.CTkButton(
             btn_frame,
-            text="➕ Tạo bản sao lưu",
+            text="➕ " + self._t("btn_create_backup"),
             command=self._create_backup,
             font=self.font_normal,
             fg_color="#2196F3",
@@ -195,7 +199,7 @@ class BackupDialog(ctk.CTkToplevel):
         
         self.btn_restore = ctk.CTkButton(
             btn_frame,
-            text="♻️ Phục hồi",
+            text="♻️ " + self._t("btn_restore"),
             command=self._restore_backup,
             font=self.font_normal,
             fg_color="#4CAF50",
@@ -206,7 +210,7 @@ class BackupDialog(ctk.CTkToplevel):
         
         self.btn_delete = ctk.CTkButton(
             btn_frame,
-            text="🗑️ Xóa",
+            text="🗑️ " + self._t("btn_delete"),
             command=self._delete_backup,
             font=self.font_normal,
             fg_color="#D32F2F",
@@ -222,8 +226,8 @@ class BackupDialog(ctk.CTkToplevel):
         
         # Detail header
         ctk.CTkLabel(
-            right_frame, 
-            text="📋 Chi tiết bản sao lưu",
+            right_frame,
+            text="📋 " + self._t("backup_detail_header"),
             font=self.font_bold
         ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
         
@@ -235,15 +239,15 @@ class BackupDialog(ctk.CTkToplevel):
         # Labels for detail info
         self.detail_labels = {}
         detail_fields = [
-            ("filename", "Tên file:"),
-            ("type", "Loại:"),
-            ("created", "Ngày tạo:"),
-            ("size", "Kích thước:"),
-            ("checksum", "Mã kiểm tra:"),
-            ("vehicles", "Số xe:"),
-            ("drivers", "Số tài xế:"),
-            ("locations", "Số vị trí:"),
-            ("verified", "Trạng thái:"),
+            ("filename", self._t("detail_filename")),
+            ("type", self._t("detail_type")),
+            ("created", self._t("detail_created")),
+            ("size", self._t("detail_size")),
+            ("checksum", self._t("detail_checksum")),
+            ("vehicles", self._t("detail_vehicles")),
+            ("drivers", self._t("detail_drivers")),
+            ("locations", self._t("detail_locations")),
+            ("verified", self._t("detail_verified")),
         ]
         
         for i, (key, label) in enumerate(detail_fields):
@@ -264,7 +268,7 @@ class BackupDialog(ctk.CTkToplevel):
         # Verify button
         self.btn_verify = ctk.CTkButton(
             right_frame,
-            text="✅ Kiểm tra tính toàn vẹn",
+            text="✅ " + self._t("btn_verify"),
             command=self._verify_backup,
             font=self.font_normal,
             state="disabled"
@@ -274,7 +278,7 @@ class BackupDialog(ctk.CTkToplevel):
         # Export backup button
         self.btn_export = ctk.CTkButton(
             right_frame,
-            text="📤 Xuất backup ra thư mục khác",
+            text="📤 " + self._t("btn_export"),
             command=self._export_backup,
             font=self.font_normal,
             state="disabled"
@@ -287,17 +291,17 @@ class BackupDialog(ctk.CTkToplevel):
         stats_frame.grid_columnconfigure((0, 1), weight=1)
         
         ctk.CTkLabel(
-            stats_frame, 
-            text="📊 Thống kê",
+            stats_frame,
+            text="📊 " + self._t("stats_header"),
             font=self.font_bold
         ).grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
         
         self.stats_labels = {}
         stats_fields = [
-            ("total_backups", "Tổng số backup:"),
-            ("manual_count", "Backup thủ công:"),
-            ("auto_count", "Backup tự động:"),
-            ("total_size", "Tổng dung lượng:"),
+            ("total_backups", self._t("stats_total_backups")),
+            ("manual_count", self._t("stats_manual_count")),
+            ("auto_count", self._t("stats_auto_count")),
+            ("total_size", self._t("stats_total_size")),
         ]
         
         for i, (key, label) in enumerate(stats_fields):
@@ -334,9 +338,8 @@ class BackupDialog(ctk.CTkToplevel):
             
             # Populate tree
             for backup in self.backups:
-                type_text = "Thủ công" if backup.backup_type == BackupType.MANUAL else "Tự động"
+                type_text = self._t("type_manual") if backup.backup_type == BackupType.MANUAL else self._t("type_auto")
                 records_count = backup.records_summary.get("vehicles", 0) if backup.records_summary else 0
-                
                 self.backup_tree.insert("", "end", iid=backup.backup_id, values=(
                     type_text,
                     format_datetime(backup.created_at),
@@ -349,7 +352,7 @@ class BackupDialog(ctk.CTkToplevel):
             
         except Exception as e:
             logger.error(f"Error loading backups: {e}")
-            messagebox.showerror("Lỗi", f"Không thể load danh sách backup: {e}", parent=self)
+            messagebox.showerror(self._t("error_title"), self._t("error_load_backup").format(error=e), parent=self)
     
     def _update_stats(self):
         """Cập nhật thống kê."""
@@ -402,7 +405,7 @@ class BackupDialog(ctk.CTkToplevel):
         b = self.selected_backup
         
         self.detail_labels["filename"].configure(text=b.filename)
-        type_text = "Thủ công" if b.backup_type == BackupType.MANUAL else "Tự động"
+        type_text = self._t("type_manual") if b.backup_type == BackupType.MANUAL else self._t("type_auto")
         self.detail_labels["type"].configure(text=type_text)
         self.detail_labels["created"].configure(text=format_datetime(b.created_at))
         self.detail_labels["size"].configure(text=format_file_size(b.size_bytes))
@@ -417,7 +420,7 @@ class BackupDialog(ctk.CTkToplevel):
             self.detail_labels["drivers"].configure(text="-")
             self.detail_labels["locations"].configure(text="-")
         
-        self.detail_labels["verified"].configure(text="Chưa kiểm tra", text_color="gray")
+        self.detail_labels["verified"].configure(text=self._t("not_verified"), text_color="gray")
     
     def _clear_detail(self):
         """Xóa chi tiết."""
@@ -441,7 +444,7 @@ class BackupDialog(ctk.CTkToplevel):
                 return
             
             # Create backup
-            self.btn_create.configure(state="disabled", text="Đang tạo...")
+            self.btn_create.configure(state="disabled", text=self._t("creating_backup"))
             self.update()
             
             metadata = self.backup_service.create_backup(
@@ -454,14 +457,12 @@ class BackupDialog(ctk.CTkToplevel):
                 backup_id=metadata.backup_id,
                 backup_type="manual",
                 filepath=metadata.filepath,
-                username="User"  # TODO: Get actual username when auth is implemented
             )
             
             # Success
             messagebox.showinfo(
-                "Thành công",
-                f"Đã tạo bản sao lưu:\n{metadata.filename}\n\n"
-                f"Kích thước: {format_file_size(metadata.size_bytes)}",
+                self._t("success_title"),
+                self._t("success_create_backup").format(filename=metadata.filename, size=format_file_size(metadata.size_bytes)),
                 parent=self
             )
             
@@ -470,9 +471,9 @@ class BackupDialog(ctk.CTkToplevel):
             
         except Exception as e:
             logger.error(f"Error creating backup: {e}")
-            messagebox.showerror("Lỗi", f"Không thể tạo backup: {e}", parent=self)
+            messagebox.showerror(self._t("error_title"), self._t("error_create_backup").format(error=e), parent=self)
         finally:
-            self.btn_create.configure(state="normal", text="➕ Tạo bản sao lưu")
+            self.btn_create.configure(state="normal", text="➕ " + self._t("btn_create_backup"))
     
     def _restore_backup(self):
         """Phục hồi từ backup."""
@@ -482,13 +483,11 @@ class BackupDialog(ctk.CTkToplevel):
         try:
             # Warning
             result = messagebox.askyesnocancel(
-                "⚠️ Cảnh báo",
-                f"Bạn có chắc chắn muốn phục hồi dữ liệu từ bản sao lưu:\n\n"
-                f"📁 {self.selected_backup.filename}\n"
-                f"📅 Tạo lúc: {format_datetime(self.selected_backup.created_at)}\n\n"
-                f"⚠️ LƯU Ý: Dữ liệu hiện tại sẽ được sao lưu trước khi phục hồi.\n"
-                f"Bạn có thể hoàn tác bằng cách phục hồi từ bản sao lưu đó.\n\n"
-                f"Tiếp tục?",
+                self._t("warning_title"),
+                self._t("confirm_restore_backup").format(
+                    filename=self.selected_backup.filename,
+                    created=format_datetime(self.selected_backup.created_at)
+                ),
                 parent=self
             )
             
@@ -496,7 +495,7 @@ class BackupDialog(ctk.CTkToplevel):
                 return
             
             # Restore
-            self.btn_restore.configure(state="disabled", text="Đang phục hồi...")
+            self.btn_restore.configure(state="disabled", text=self._t("restoring_backup"))
             self.update()
             
             pre_restore_backup = self.backup_service.restore_backup(
@@ -508,7 +507,6 @@ class BackupDialog(ctk.CTkToplevel):
             log_restore(
                 backup_id=self.selected_backup.backup_id,
                 filepath=self.selected_backup.filepath,
-                username="User"
             )
             
             # Success
@@ -517,9 +515,8 @@ class BackupDialog(ctk.CTkToplevel):
                 pre_restore_info = f"\n\nBản sao lưu trước phục hồi: {pre_restore_backup.filename}"
             
             messagebox.showinfo(
-                "Thành công",
-                f"Đã phục hồi dữ liệu thành công!{pre_restore_info}\n\n"
-                f"Vui lòng khởi động lại ứng dụng để áp dụng thay đổi.",
+                self._t("success_title"),
+                self._t("success_restore_backup").format(pre_restore_info=pre_restore_info),
                 parent=self
             )
             
@@ -532,9 +529,9 @@ class BackupDialog(ctk.CTkToplevel):
             
         except Exception as e:
             logger.error(f"Error restoring backup: {e}")
-            messagebox.showerror("Lỗi", f"Không thể phục hồi: {e}", parent=self)
+            messagebox.showerror(self._t("error_title"), self._t("error_restore_backup").format(error=e), parent=self)
         finally:
-            self.btn_restore.configure(state="normal", text="♻️ Phục hồi")
+            self.btn_restore.configure(state="normal", text="♻️ " + self._t("btn_restore"))
     
     def _delete_backup(self):
         """Xóa backup."""
@@ -544,11 +541,11 @@ class BackupDialog(ctk.CTkToplevel):
         try:
             # Confirm
             if not messagebox.askyesno(
-                "Xác nhận xóa",
-                f"Bạn có chắc chắn muốn xóa bản sao lưu:\n\n"
-                f"📁 {self.selected_backup.filename}\n"
-                f"📅 Tạo lúc: {format_datetime(self.selected_backup.created_at)}\n\n"
-                f"⚠️ Hành động này không thể hoàn tác!",
+                self._t("confirm_delete_title"),
+                self._t("confirm_delete_backup").format(
+                    filename=self.selected_backup.filename,
+                    created=format_datetime(self.selected_backup.created_at)
+                ),
                 parent=self
             ):
                 return
@@ -556,14 +553,14 @@ class BackupDialog(ctk.CTkToplevel):
             # Delete
             self.backup_service.delete_backup(self.selected_backup.backup_id)
             
-            messagebox.showinfo("Thành công", "Đã xóa bản sao lưu.", parent=self)
+            messagebox.showinfo(self._t("success_title"), self._t("success_delete_backup"), parent=self)
             
             self._load_backups()
             self._clear_detail()
             
         except Exception as e:
             logger.error(f"Error deleting backup: {e}")
-            messagebox.showerror("Lỗi", f"Không thể xóa backup: {e}", parent=self)
+            messagebox.showerror(self._t("error_title"), self._t("error_delete_backup").format(error=e), parent=self)
     
     def _verify_backup(self):
         """Kiểm tra tính toàn vẹn của backup."""
@@ -571,45 +568,42 @@ class BackupDialog(ctk.CTkToplevel):
             return
         
         try:
-            self.btn_verify.configure(state="disabled", text="Đang kiểm tra...")
+            self.btn_verify.configure(state="disabled", text=self._t("verifying_backup"))
             self.update()
             
             result = self.backup_service.verify_backup(self.selected_backup.backup_id)
             
             if result["is_valid"]:
                 self.detail_labels["verified"].configure(
-                    text="✅ Hợp lệ",
+                    text=self._t("valid_backup"),
                     text_color="green"
                 )
                 messagebox.showinfo(
-                    "Kết quả kiểm tra",
-                    f"✅ Bản sao lưu hợp lệ!\n\n"
-                    f"• Tính toàn vẹn dữ liệu: OK\n"
-                    f"• Mã kiểm tra: Khớp\n"
-                    f"• Cấu trúc bảng: OK",
+                    self._t("verify_result_title"),
+                    self._t("verify_success"),
                     parent=self
                 )
             else:
                 self.detail_labels["verified"].configure(
-                    text="❌ Lỗi",
+                    text=self._t("invalid_backup"),
                     text_color="red"
                 )
                 errors = "\n".join(f"• {e}" for e in result.get("errors", []))
                 messagebox.showwarning(
-                    "Kết quả kiểm tra",
-                    f"❌ Bản sao lưu có vấn đề!\n\nLỗi:\n{errors}",
+                    self._t("verify_result_title"),
+                    self._t("verify_failed").format(errors=errors),
                     parent=self
                 )
                 
         except Exception as e:
             logger.error(f"Error verifying backup: {e}")
             self.detail_labels["verified"].configure(
-                text="❌ Lỗi kiểm tra",
+                text=self._t("verify_error"),
                 text_color="red"
             )
-            messagebox.showerror("Lỗi", f"Không thể kiểm tra: {e}", parent=self)
+            messagebox.showerror(self._t("error_title"), self._t("verify_error_msg").format(error=e), parent=self)
         finally:
-            self.btn_verify.configure(state="normal", text="✅ Kiểm tra tính toàn vẹn")
+            self.btn_verify.configure(state="normal", text="✅ " + self._t("btn_verify"))
     
     def _export_backup(self):
         """Xuất backup ra thư mục khác."""
@@ -619,7 +613,7 @@ class BackupDialog(ctk.CTkToplevel):
         try:
             # Ask for destination
             dest_dir = filedialog.askdirectory(
-                title="Chọn thư mục lưu backup",
+                title=self._t("select_export_dir"),
                 parent=self
             )
             
@@ -633,8 +627,8 @@ class BackupDialog(ctk.CTkToplevel):
             
             if dest_path.exists():
                 if not messagebox.askyesno(
-                    "File đã tồn tại",
-                    f"File {dest_path.name} đã tồn tại.\nBạn có muốn ghi đè không?",
+                    self._t("file_exists_title"),
+                    self._t("file_exists_msg").format(filename=dest_path.name),
                     parent=self
                 ):
                     return
@@ -642,14 +636,14 @@ class BackupDialog(ctk.CTkToplevel):
             shutil.copy2(src_path, dest_path)
             
             messagebox.showinfo(
-                "Thành công",
-                f"Đã xuất backup ra:\n{dest_path}",
+                self._t("success_title"),
+                self._t("success_export_backup").format(path=dest_path),
                 parent=self
             )
             
         except Exception as e:
             logger.error(f"Error exporting backup: {e}")
-            messagebox.showerror("Lỗi", f"Không thể xuất backup: {e}", parent=self)
+            messagebox.showerror(self._t("error_title"), self._t("error_export_backup").format(error=e), parent=self)
 
 
 def show_backup_dialog(parent, backup_service: BackupService, on_restore_callback=None):

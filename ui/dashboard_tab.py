@@ -16,6 +16,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from io import BytesIO
 import utils
 from report_generators import pdf_generator # Cập nhật import
+from ui.export_bundle_dialog import ExportBundleDialog
+from ui.import_bundles_dialog import ImportBundlesDialog
+from ui.generate_report_dialog import GenerateReportDialog
 
 class DashboardTab:
     def __init__(self, parent_frame, app_instance):
@@ -48,6 +51,34 @@ class DashboardTab:
         self.btn_export_pdf = ctk.CTkButton(filter_dash, text="", command=self.export_dashboard_pdf, font=self.app.font_normal)
         self.btn_export_pdf.pack(side="left", padx=5, pady=10)
 
+        # HQ tools (Phase 3.4)
+        hq_tools_frame = ctk.CTkFrame(filter_dash, fg_color="transparent")
+        hq_tools_frame.pack(side="left", padx=10, pady=10)
+
+        self.btn_export_bundle = ctk.CTkButton(
+            hq_tools_frame,
+            text="",
+            command=self.open_export_bundle_dialog,
+            font=self.app.font_normal,
+        )
+        self.btn_export_bundle.pack(side="left", padx=5)
+
+        self.btn_import_bundles = ctk.CTkButton(
+            hq_tools_frame,
+            text="",
+            command=self.open_import_bundles_dialog,
+            font=self.app.font_normal,
+        )
+        self.btn_import_bundles.pack(side="left", padx=5)
+
+        self.btn_generate_report = ctk.CTkButton(
+            hq_tools_frame,
+            text="",
+            command=self.open_generate_report_dialog,
+            font=self.app.font_normal,
+        )
+        self.btn_generate_report.pack(side="left", padx=5)
+
         auto_refresh_frame = ctk.CTkFrame(filter_dash, fg_color="transparent")
         auto_refresh_frame.pack(side="right", padx=10, pady=10)
 
@@ -75,6 +106,11 @@ class DashboardTab:
         self.btn_export_pdf.configure(text=self.app.get_translation("btn_export_pdf"))
         self.auto_refresh_check.configure(text=self.app.get_translation("cbx_auto_refresh"))
         self.lbl_minutes.configure(text=self.app.get_translation("lbl_minutes"))
+
+        # HQ tool buttons (translations)
+        self.btn_export_bundle.configure(text=self.app.get_translation("btn_export_bundle"))
+        self.btn_import_bundles.configure(text=self.app.get_translation("btn_import_bundles"))
+        self.btn_generate_report.configure(text=self.app.get_translation("btn_generate_report"))
 
         if self.current_dashboard_figure:
             self.update_dashboard()
@@ -202,6 +238,18 @@ class DashboardTab:
             self.app.get_translation("err_load_dashboard").format(error=error)
         )
         self.app.status_var.set(self.app.get_translation("status_error"))
+
+    def open_export_bundle_dialog(self):
+        """Open the export bundle dialog (Phase 3.4)."""
+        ExportBundleDialog(self.parent, self.app)
+
+    def open_import_bundles_dialog(self):
+        """Open the import bundles dialog (Phase 3.4)."""
+        ImportBundlesDialog(self.parent, self.app)
+
+    def open_generate_report_dialog(self):
+        """Open the generate report dialog (Phase 3.4)."""
+        GenerateReportDialog(self.parent, self.app)
 
     def export_dashboard_png(self):
         if not self.current_dashboard_figure:

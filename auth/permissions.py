@@ -5,7 +5,11 @@ Role-Based Access Control (RBAC) - Phase 1C
 """
 
 from enum import Enum, auto
-from typing import Set, Dict
+from typing import Set, Dict, Callable, Optional
+from functools import wraps
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Role constants
 ROLE_ADMIN = 'admin'
@@ -205,6 +209,73 @@ def get_role_display_name(role: str) -> str:
     display_names = {
         ROLE_ADMIN: "Quản trị viên",
         ROLE_OPERATOR: "Nhân viên",
-        ROLE_VIEWER: "Chỉ xem",
+        ROLE_VIEWER: "Người xem"
     }
     return display_names.get(role, role)
+
+
+# SECURITY FIX Issue #7: DB-layer permission enforcement decorator
+def require_permission(permission: Permission):
+    """
+    Decorator to enforce permission check at database/service layer.
+    
+    Usage:
+        @require_permission(Permission.VEHICLE_CREATE)
+        def add_vehicle(self, ...):
+            pass
+    
+    Raises:
+        PermissionError: If current user lacks required permission
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get AuthManager instance to check current user
+            try:
+                from auth.auth_manager import AuthManager
+                auth_manager = AuthManager.get_instance()
+                
+                if not auth_manager.is_logged_in():
+                    logger.warning(f"Permission denied: No user logged in for {func.__name__}")
+                    raise PermissionError("Vui lòng đăng nhập để thực hiện thao tác này")
+                
+                if not auth_manager.has_permission(permission):
+                    username = auth_manager.get_current_username()
+                    logger.warning(
+                        f"Permission denied: User '{username}' lacks {permission.name} "
+                        f"for {func.__name__}"
+                    )
+                    raise PermissionError(
+                        f"Bạn không có quyền thực hiện thao tác này. "
+                        f"Yêu cầu quyền: {get_permission_display_name(permission)}"
+                    )
+                
+                # Permission granted - execute function
+                return func(*args, **kwargs)
+                
+            except ImportError as e:
+                logger.error(f"Cannot import AuthManager for permission check: {e}")
+                # Fail closed - deny access if auth system unavailable
+                raise PermissionError("Hệ thống xác thực không khả dụng")
+        
+        return wrapper
+    return decorator
+
+
+def check_permission_silent(permission: Permission) -> bool:
+    """
+    Check permission without raising exception (for UI display logic).
+    
+    Returns:
+        bool: True if current user has permission, False otherwise
+    """
+    try:
+        from auth.auth_manager import AuthManager
+        auth_manager = AuthManager.get_instance()
+        
+        if not auth_manager.is_logged_in():
+            return False
+        
+        return auth_manager.has_permission(permission)
+    except Exception:
+        return False

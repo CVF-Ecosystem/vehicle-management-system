@@ -9,7 +9,8 @@ import math
 from report_generators import excel_generator
 import utils
 from config import PAD_GENERAL, PAD_SMALL
-from ui.components import EditVehicleDialog, DateRangeDialog, style_treeview, LocationSwapDialog, add_right_click_menu
+from ui.components import EditVehicleDialog, DateRangeDialog, style_treeview, LocationSwapDialog, add_right_click_menu, harmonize_combobox_style
+from ui.vehicle_timeline_dialog import VehicleTimelineDialog
 from data_normalizer import normalizer
 
 class StockTab:
@@ -22,9 +23,12 @@ class StockTab:
         self.current_page = 1
         self.total_pages = 1
         self.items_per_page = 100
+        
+        # === PHASE 2.3: Batch Operations - Track selected VINs ===
+        self.selected_vins = set()
 
         self.parent.grid_columnconfigure(0, weight=1)
-        self.parent.grid_rowconfigure(1, weight=1)
+        self.parent.grid_rowconfigure(2, weight=1)  # Changed from 1 to 2 to accommodate batch toolbar
 
         filter_frame = ctk.CTkFrame(self.parent)
         filter_frame.grid(row=0, column=0, padx=PAD_GENERAL, pady=(PAD_GENERAL, PAD_SMALL), sticky="ew")
@@ -35,6 +39,7 @@ class StockTab:
         self.owner_filter_var = ctk.StringVar()
         self.owner_filter_combo = ctk.CTkComboBox(filter_frame, variable=self.owner_filter_var, command=self.update_stock_list, font=self.app.font_normal)
         self.owner_filter_combo.grid(row=0, column=1, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
+        harmonize_combobox_style(self.owner_filter_combo)
         add_right_click_menu(self.app, self.owner_filter_combo)
 
         self.lbl_search = ctk.CTkLabel(filter_frame, text="", font=self.app.font_normal)
@@ -53,23 +58,57 @@ class StockTab:
         self.export_menu_button.pack(side="left", padx=PAD_SMALL)
         self.export_menu = Menu(self.export_menu_button, tearoff=0, font=("Arial", 12))
 
+        # === PHASE 2.3: Batch Operations Toolbar ===
+        batch_frame = ctk.CTkFrame(self.parent)
+        batch_frame.grid(row=1, column=0, padx=PAD_GENERAL, pady=(0, PAD_SMALL), sticky="ew")
+        
+        self.btn_select_all = ctk.CTkButton(batch_frame, text="", width=120, command=self.select_all_vehicles, font=self.app.font_normal)
+        self.btn_select_all.pack(side="left", padx=PAD_SMALL, pady=PAD_SMALL)
+        
+        self.btn_deselect_all = ctk.CTkButton(batch_frame, text="", width=120, command=self.deselect_all_vehicles, font=self.app.font_normal)
+        self.btn_deselect_all.pack(side="left", padx=PAD_SMALL, pady=PAD_SMALL)
+        
+        self.btn_batch_export = ctk.CTkButton(batch_frame, text="", width=150, command=self.batch_export_selected, font=self.app.font_normal)
+        self.btn_batch_export.pack(side="left", padx=PAD_SMALL, pady=PAD_SMALL)
+        
+        self.btn_batch_location = ctk.CTkButton(batch_frame, text="", width=150, command=self.batch_assign_location, font=self.app.font_normal)
+        self.btn_batch_location.pack(side="left", padx=PAD_SMALL, pady=PAD_SMALL)
+        
+        self.lbl_selected_count = ctk.CTkLabel(batch_frame, text="", font=self.app.font_normal)
+        self.lbl_selected_count.pack(side="right", padx=PAD_SMALL, pady=PAD_SMALL)
+        # === END BATCH TOOLBAR ===
+
         list_frame = ctk.CTkFrame(self.parent)
-        list_frame.grid(row=1, column=0, padx=PAD_GENERAL, pady=(PAD_SMALL, 0), sticky="nsew")
+        list_frame.grid(row=2, column=0, padx=PAD_GENERAL, pady=(PAD_SMALL, 0), sticky="nsew")
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
 
-        cols = ("stt", "vin", "vehicle_type", "owner", "location", "date_in")
+        # === PHASE 2.3: Added 'select' column for checkboxes ===
+        cols = ("select", "stt", "vin", "vehicle_type", "owner", "location", "date_in")
         self.tree = ttk.Treeview(list_frame, columns=cols, show="headings")
         self.tree.grid(row=0, column=0, sticky="nsew")
         
         style_treeview(self.app, self.tree)
         
+        self.tree.column("select", width=50, anchor="center", stretch=False)
         self.tree.column("stt", width=50, anchor="center", stretch=False)
         self.tree.column("vin", width=200)
         self.tree.column("vehicle_type", width=120)
         self.tree.column("owner", width=150)
         self.tree.column("location", width=120, anchor="center")
         self.tree.column("date_in", width=150, anchor="center")
+        
+        # Bind click on select column to toggle checkbox
+        self.tree.bind("<Button-1>", self._on_tree_click)
+        
+        # Bind double-click to show vehicle timeline
+        self.tree.bind("<Double-1>", self._on_double_click)
+        
+        # === PHASE 3: Enhanced keyboard navigation ===
+        self.tree.bind("<Return>", self._on_enter_key)  # Enter to view details
+        self.tree.bind("<space>", self._on_space_key)   # Space to toggle select
+        self.tree.bind("<Delete>", self._on_delete_key) # Delete to remove
+        # === END PHASE 3 ===
 
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
@@ -79,7 +118,7 @@ class StockTab:
         self.context_menu = Menu(self.tree, tearoff=0, font=("Arial", 12))
         
         pagination_frame = ctk.CTkFrame(self.parent)
-        pagination_frame.grid(row=2, column=0, padx=PAD_GENERAL, pady=(0, PAD_GENERAL), sticky="ew")
+        pagination_frame.grid(row=3, column=0, padx=PAD_GENERAL, pady=(0, PAD_GENERAL), sticky="ew")
         pagination_frame.grid_columnconfigure(1, weight=1)
 
         # === CẬP NHẬT: Sử dụng key dịch thuật ===
@@ -108,11 +147,20 @@ class StockTab:
         self.btn_refresh.configure(text=self.app.get_translation("btn_refresh"))
         self.export_menu_button.configure(text=self.app.get_translation("btn_export_reports"))
         
+        # === PHASE 2.3: Batch toolbar language updates ===
+        self.btn_select_all.configure(text=self.app.get_translation("batch_select_all"))
+        self.btn_deselect_all.configure(text=self.app.get_translation("batch_deselect_all"))
+        self.btn_batch_export.configure(text=self.app.get_translation("batch_export_selected"))
+        self.btn_batch_location.configure(text=self.app.get_translation("batch_assign_location"))
+        self._update_selected_count_label()
+        # === END BATCH TOOLBAR ===
+        
         self.export_menu.delete(0, "end")
         self.export_menu.add_command(label=self.app.get_translation("menu_export_stock"), command=self.export_stock)
         self.export_menu.add_command(label=self.app.get_translation("menu_export_summary"), command=self.export_summary)
         self.export_menu.add_command(label=self.app.get_translation("menu_export_history"), command=self.app.prompt_for_history_export)
 
+        self.tree.heading("select", text="☐")
         self.tree.heading("stt", text=self.app.get_translation("tree_stt"))
         self.tree.heading("vin", text=self.app.get_translation("tree_vin"))
         self.tree.heading("vehicle_type", text=self.app.get_translation("tree_type"))
@@ -193,7 +241,9 @@ class StockTab:
             stt = offset + idx
             date_in_str = utils.format_datetime_for_display(row["date_in"])
             location_name = row.get("full_location_name", "N/A")
-            self.tree.insert("", "end", values=(stt, row["vin"], row["vehicle_type"], row["owner"], location_name, date_in_str))
+            # === PHASE 2.3: Add checkbox column ===
+            checkbox = "☑" if row["vin"] in self.selected_vins else "☐"
+            self.tree.insert("", "end", values=(checkbox, stt, row["vin"], row["vehicle_type"], row["owner"], location_name, date_in_str))
 
         status_text = self.app.get_translation("status_stock_count").format(count=total_items)
         self.app.status_var.set(status_text)
@@ -229,12 +279,40 @@ class StockTab:
             self.tree.selection_set(item_id)
             self.context_menu.post(event.x_root, event.y_root)
 
+    # === PHASE 3: Enhanced keyboard navigation ===
+    def _on_enter_key(self, event):
+        """Enter key: View vehicle timeline."""
+        self._on_double_click(event)
+        return "break"
+    
+    def _on_space_key(self, event):
+        """Space key: Toggle checkbox for selected vehicle."""
+        selected_items = self.tree.selection()
+        if selected_items:
+            item_id = selected_items[0]
+            item = self.tree.item(item_id)
+            vin = item['values'][2]
+            if vin in self.selected_vins:
+                self.selected_vins.remove(vin)
+            else:
+                self.selected_vins.add(vin)
+            self.update_stock_list()
+            self._update_selected_count_label()
+        return "break"
+    
+    def _on_delete_key(self, event):
+        """Delete key: Remove selected vehicle."""
+        self.delete_selected_vehicle()
+        return "break"
+    # === END PHASE 3 ===
+
     def get_selected_vin(self):
         selected_items = self.tree.selection()
         if not selected_items:
             return None
         item = self.tree.item(selected_items[0])
-        return item['values'][1]
+        # === PHASE 2.3: Index changed from 1 to 2 due to checkbox column ===
+        return item['values'][2]
 
     def edit_selected_vehicle(self):
         vin = self.get_selected_vin()
@@ -344,7 +422,26 @@ class StockTab:
                 "days_in_stock": self.app.get_translation("excel_days_in_stock")
             }
             highlight_config = {"threshold": threshold, "column_name": self.app.get_translation("excel_days_in_stock")}
-            return excel_generator.generate_excel_report(file_path, data, cols, highlight_config=highlight_config)
+            result = excel_generator.generate_excel_report(file_path, data, cols, highlight_config=highlight_config)
+
+            if result.get("success"):
+                try:
+                    from database.audit_repository import log_audit, AuditAction
+
+                    log_audit(
+                        action=AuditAction.EXPORT,
+                        details={
+                            "source": "StockTab.export_stock",
+                            "type": "stock_report_excel",
+                            "file": file_path,
+                            "highlight_threshold": threshold,
+                            "rows": len(data) if isinstance(data, list) else None,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            return result
 
         self._run_export_in_thread(do_export, path, highlight_threshold)
 
@@ -366,6 +463,225 @@ class StockTab:
                 total_stock = sum(item['stock'] for item in data)
                 total_row = {'owner': self.app.get_translation('pdf_total_row'), 'total_in': total_in, 'total_out': total_out, 'stock': total_stock}
             cols = {"owner": self.app.get_translation("tree_owner"), "total_in": self.app.get_translation("pdf_col_total_in"), "total_out": self.app.get_translation("pdf_col_total_out"), "stock": self.app.get_translation("pdf_col_stock")}
-            return excel_generator.generate_excel_report(file_path, data, cols, total_row)
+            result = excel_generator.generate_excel_report(file_path, data, cols, total_row)
+
+            if result.get("success"):
+                try:
+                    from database.audit_repository import log_audit, AuditAction
+
+                    log_audit(
+                        action=AuditAction.EXPORT,
+                        details={
+                            "source": "StockTab.export_summary",
+                            "type": "dispatch_summary_excel",
+                            "file": file_path,
+                            "date_from": start.isoformat() if hasattr(start, "isoformat") else str(start),
+                            "date_to": end.isoformat() if hasattr(end, "isoformat") else str(end),
+                            "rows": len(data) if isinstance(data, list) else None,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            return result
 
         self._run_export_in_thread (do_export, path, start_date, end_date)
+
+    # === PHASE 2.3: Batch Operations Methods ===
+    
+    def _on_tree_click(self, event):
+        """Handle click on treeview - toggle checkbox if clicked on select column"""
+        region = self.tree.identify_region(event.x, event.y)
+        if region == "cell":
+            column = self.tree.identify_column(event.x)
+            if column == "#1":  # First column is "select"
+                item_id = self.tree.identify_row(event.y)
+                if item_id:
+                    values = self.tree.item(item_id, 'values')
+                    vin = values[2]  # VIN is at index 2
+                    self._toggle_selection(item_id, vin)
+        elif region == "heading":
+            column = self.tree.identify_column(event.x)
+            if column == "#1":  # Header click - toggle all visible
+                self._toggle_all_visible()
+    
+    def _on_double_click(self, event):
+        """Handle double-click on treeview - show vehicle timeline"""
+        # Ignore double-click on select column
+        column = self.tree.identify_column(event.x)
+        if column == "#1":
+            return
+        
+        item_id = self.tree.identify_row(event.y)
+        if not item_id:
+            return
+        
+        values = self.tree.item(item_id, 'values')
+        if len(values) >= 3:
+            vin = values[2]  # VIN is at index 2
+            if vin:
+                lang = getattr(self.app, 'current_language', 'vi')
+                VehicleTimelineDialog(self.app, vin, self.vehicle_manager, lang)
+    
+    def _toggle_selection(self, item_id, vin):
+        """Toggle selection for a single vehicle"""
+        values = list(self.tree.item(item_id, 'values'))
+        if vin in self.selected_vins:
+            self.selected_vins.discard(vin)
+            values[0] = "☐"
+        else:
+            self.selected_vins.add(vin)
+            values[0] = "☑"
+        self.tree.item(item_id, values=values)
+        self._update_selected_count_label()
+    
+    def _toggle_all_visible(self):
+        """Toggle all visible items in current page"""
+        all_vins_in_view = []
+        for item_id in self.tree.get_children():
+            values = self.tree.item(item_id, 'values')
+            all_vins_in_view.append((item_id, values[2]))  # VIN at index 2
+        
+        # Check if all are selected
+        all_selected = all(vin in self.selected_vins for _, vin in all_vins_in_view)
+        
+        for item_id, vin in all_vins_in_view:
+            values = list(self.tree.item(item_id, 'values'))
+            if all_selected:
+                self.selected_vins.discard(vin)
+                values[0] = "☐"
+            else:
+                self.selected_vins.add(vin)
+                values[0] = "☑"
+            self.tree.item(item_id, values=values)
+        
+        self._update_selected_count_label()
+    
+    def _update_selected_count_label(self):
+        """Update the label showing number of selected vehicles"""
+        count = len(self.selected_vins)
+        if count > 0:
+            text = self.app.get_translation("batch_selected_count").format(count=count)
+        else:
+            text = self.app.get_translation("batch_no_selection")
+        self.lbl_selected_count.configure(text=text)
+    
+    def select_all_vehicles(self):
+        """Select all visible vehicles on current page"""
+        for item_id in self.tree.get_children():
+            values = list(self.tree.item(item_id, 'values'))
+            vin = values[2]
+            self.selected_vins.add(vin)
+            values[0] = "☑"
+            self.tree.item(item_id, values=values)
+        self._update_selected_count_label()
+    
+    def deselect_all_vehicles(self):
+        """Deselect all vehicles (clear selection)"""
+        self.selected_vins.clear()
+        for item_id in self.tree.get_children():
+            values = list(self.tree.item(item_id, 'values'))
+            values[0] = "☐"
+            self.tree.item(item_id, values=values)
+        self._update_selected_count_label()
+    
+    def batch_export_selected(self):
+        """Export selected vehicles to Excel"""
+        if not self.selected_vins:
+            messagebox.showwarning(
+                self.app.get_translation("batch_no_selection"),
+                self.app.get_translation("batch_no_selection_msg")
+            )
+            return
+        
+        default_name = utils.get_default_filename(self.app.get_translation("batch_export_selected"), ".xlsx")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", 
+            filetypes=[("Excel files", "*.xlsx")], 
+            initialfile=default_name
+        )
+        if not path:
+            return
+        
+        def do_export(file_path, vins):
+            # Get vehicle data for selected VINs
+            data = []
+            for vin in vins:
+                vehicle = self.vehicle_manager.get_vehicle_by_vin(vin)
+                if vehicle:
+                    data.append(vehicle)
+            
+            cols = {
+                "vin": self.app.get_translation("tree_vin"),
+                "owner": self.app.get_translation("tree_owner"),
+                "vehicle_type": self.app.get_translation("tree_type"),
+                "full_location_name": self.app.get_translation("tree_location"),
+                "date_in": self.app.get_translation("tree_date_in"),
+            }
+            result = excel_generator.generate_excel_report(file_path, data, cols)
+
+            if result.get("success"):
+                try:
+                    from database.audit_repository import log_audit, AuditAction
+
+                    log_audit(
+                        action=AuditAction.EXPORT,
+                        details={
+                            "source": "StockTab.batch_export_selected",
+                            "type": "batch_selected_excel",
+                            "file": file_path,
+                            "vins_count": len(vins) if vins else 0,
+                            "rows": len(data) if isinstance(data, list) else None,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            return result
+        
+        self._run_export_in_thread(do_export, path, list(self.selected_vins))
+    
+    def batch_assign_location(self):
+        """Assign location to multiple selected vehicles"""
+        if not self.selected_vins:
+            messagebox.showwarning(
+                self.app.get_translation("batch_no_selection"),
+                self.app.get_translation("batch_no_selection_msg")
+            )
+            return
+        
+        # Open location selection dialog
+        from ui.components import BatchLocationDialog
+        dialog = BatchLocationDialog(
+            self.app, 
+            list(self.selected_vins), 
+            self.app.location_manager
+        )
+        
+        if dialog.result:
+            location_id = dialog.result
+            success_count = 0
+            fail_count = 0
+            
+            for vin in self.selected_vins:
+                result = self.vehicle_manager.assign_location(vin, location_id)
+                if result.get("success"):
+                    success_count += 1
+                else:
+                    fail_count += 1
+            
+            if success_count > 0:
+                self.app.show_toast(
+                    self.app.get_translation("batch_assign_success").format(count=success_count)
+                )
+            
+            if fail_count > 0:
+                messagebox.showwarning(
+                    self.app.get_translation("warn_partial_fail"),
+                    self.app.get_translation("batch_assign_fail").format(count=fail_count)
+                )
+            
+            # Clear selection and refresh
+            self.deselect_all_vehicles()
+            self.update_stock_list()
+    # === END PHASE 2.3 ===

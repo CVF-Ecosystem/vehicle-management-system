@@ -78,3 +78,21 @@ htmlcov/
 # Office temp files
 ~$*.docx
 ~$*.xlsx
+
+# Credentials & Security (QUAN TRỌNG - không commit lên GitHub)
+config/.saved_credentials
+config/security.db
+*.key
+*.pem
+
+# Runtime logs
+app_log.txt
+logs/
+
+# User data files
+vehicle_management_v5.1
+CAR DATA.xlsx
+PHIEU VC OTO MAU 2025.docx
+
+# PyInstaller
+main.spec

@@ -2,7 +2,7 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 from config import PAD_GENERAL, PAD_SMALL
-from ui.components import style_treeview, add_right_click_menu # === BỔ SUNG MỚI ===
+from ui.components import style_treeview, add_right_click_menu, AutocompleteEntry  # === BỔ SUNG MỚI ===
 from ui.camera_scanner import CameraScannerDialog
 
 class DispatchTab:
@@ -29,15 +29,27 @@ class DispatchTab:
 
         self.lbl_driver = ctk.CTkLabel(creation_frame, text="", font=self.app.font_normal)
         self.lbl_driver.grid(row=1, column=0, padx=PAD_SMALL, pady=PAD_SMALL, sticky="w")
-        self.driver_combo = ctk.CTkComboBox(creation_frame, values=[], font=self.app.font_normal)
-        self.driver_combo.grid(row=1, column=1, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
-        add_right_click_menu(self.app, self.driver_combo) # === BỔ SUNG MỚI ===
+        # === PHASE 2.5: AutocompleteEntry for driver ===
+        self.driver_entry = AutocompleteEntry(
+            creation_frame,
+            suggestions=self._get_driver_suggestions,
+            font=self.app.font_normal,
+            placeholder_text=self.app.get_translation("autocomplete_driver_hint") if hasattr(self.app, 'get_translation') else ""
+        )
+        self.driver_entry.grid(row=1, column=1, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
+        add_right_click_menu(self.app, self.driver_entry.entry)
 
         self.lbl_transport = ctk.CTkLabel(creation_frame, text="", font=self.app.font_normal)
         self.lbl_transport.grid(row=2, column=0, padx=PAD_SMALL, pady=PAD_SMALL, sticky="w")
-        self.transport_combo = ctk.CTkComboBox(creation_frame, values=[], font=self.app.font_normal)
-        self.transport_combo.grid(row=2, column=1, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
-        add_right_click_menu(self.app, self.transport_combo) # === BỔ SUNG MỚI ===
+        # === PHASE 2.5: AutocompleteEntry for transport ===
+        self.transport_entry = AutocompleteEntry(
+            creation_frame,
+            suggestions=self._get_transport_suggestions,
+            font=self.app.font_normal,
+            placeholder_text=self.app.get_translation("autocomplete_transport_hint") if hasattr(self.app, 'get_translation') else ""
+        )
+        self.transport_entry.grid(row=2, column=1, padx=PAD_SMALL, pady=PAD_SMALL, sticky="ew")
+        add_right_click_menu(self.app, self.transport_entry.entry)
 
         self.btn_create_dispatch = ctk.CTkButton(creation_frame, text="", command=self.create_dispatch, font=self.app.font_normal)
         self.btn_create_dispatch.grid(row=3, column=1, padx=PAD_SMALL, pady=PAD_GENERAL, sticky="e")
@@ -88,6 +100,24 @@ class DispatchTab:
 
         self.update_language()
 
+    # === PHASE 2.5: Autocomplete suggestions ===
+    def _get_driver_suggestions(self):
+        """Lấy danh sách tài xế cho gợi ý tự động."""
+        try:
+            drivers = self.entity_manager.get_all_active_drivers()
+            return [d['name'] for d in drivers if d.get('name')]
+        except Exception:
+            return []
+    
+    def _get_transport_suggestions(self):
+        """Lấy danh sách xe vận chuyển cho gợi ý tự động."""
+        try:
+            vehicles = self.entity_manager.get_all_active_transport_vehicles()
+            return [v['license_plate'] for v in vehicles if v.get('license_plate')]
+        except Exception:
+            return []
+    # === END PHASE 2.5 ===
+
     def update_language(self):
         self.lbl_creation_title.configure(text=self.app.get_translation("frame_create_dispatch"))
         self.lbl_driver.configure(text=self.app.get_translation("lbl_driver"))
@@ -113,15 +143,13 @@ class DispatchTab:
             self.add_vehicle_to_dispatch()
 
     def update_dropdowns(self):
+        # === PHASE 2.5: Cập nhật maps cho autocomplete ===
         drivers = self.entity_manager.get_all_active_drivers()
         self.driver_map = {d['name']: d['id'] for d in drivers}
-        self.driver_combo.configure(values=list(self.driver_map.keys()))
-        self.driver_combo.set("")
 
         transport_vehicles = self.entity_manager.get_all_active_transport_vehicles()
         self.transport_map = {v['license_plate']: v['id'] for v in transport_vehicles}
-        self.transport_combo.configure(values=list(self.transport_map.keys()))
-        self.transport_combo.set("")
+        # === END PHASE 2.5 ===
 
     def load_open_dispatch(self):
         open_dispatches = self.dispatch_manager.get_open_dispatch_details()
@@ -145,8 +173,9 @@ class DispatchTab:
             self.reset_ui()
 
     def create_dispatch(self):
-        driver_name = self.driver_combo.get().strip()
-        transport_plate = self.transport_combo.get().strip()
+        # === PHASE 2.5: Sử dụng entry thay vì combo ===
+        driver_name = self.driver_entry.get().strip()
+        transport_plate = self.transport_entry.get().strip()
 
         if not driver_name or not transport_plate:
             messagebox.showwarning(self.app.get_translation("warn_missing_dispatch_info"), 
@@ -180,6 +209,9 @@ class DispatchTab:
 
         new_dispatch_id = self.dispatch_manager.create_dispatch(driver_id, transport_id)
         if new_dispatch_id:
+            # Clear entries sau khi tạo thành công
+            self.driver_entry.delete(0, "end")
+            self.transport_entry.delete(0, "end")
             self.app.show_toast(self.app.get_translation("toast_dispatch_created").format(id=new_dispatch_id))
             self.load_open_dispatch()
         else:

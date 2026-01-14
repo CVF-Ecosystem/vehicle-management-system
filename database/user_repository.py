@@ -1,16 +1,27 @@
-# database/user_repository.py
-"""
+"""database/user_repository.py
+
 User Repository - Phase 1C: Authentication
-Quản lý CRUD operations cho bảng users và login_history.
+
+Lưu ý kiến trúc:
+- UserRepository KHÔNG kế thừa BaseManager nữa để có thể dùng database riêng
+    (security DB) mà không ảnh hưởng tới connection của vehicle DB.
+- Password hashing dùng bcrypt (mặc định), và vẫn verify được hash cũ dạng
+    "salt:sha256" để tương thích dữ liệu đã tạo trước đây.
 """
 
 import logging
 import hashlib
 import secrets
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
-from database.base_manager import BaseManager
+import config
+
+try:
+        import bcrypt  # type: ignore
+except Exception:  # pragma: no cover
+        bcrypt = None
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +37,67 @@ LOCKOUT_DURATION_MINUTES = 15
 PASSWORD_MIN_LENGTH = 6
 
 
-class UserRepository(BaseManager):
+class UserRepository:
     """
     Repository cho quản lý users và authentication.
     """
     
     def __init__(self, db_path: str = None):
-        super().__init__(db_path)
+        # Default to dedicated security DB when available.
+        self.db_path = db_path or getattr(config, "SECURITY_DB_FILE", None) or config.DB_FILE
+
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self._ensure_schema()
         self._ensure_default_admin()
+
+    def close(self):
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+    def _ensure_schema(self):
+        """Tạo bảng users/login_history trong security DB nếu chưa có."""
+        with self.conn:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    full_name TEXT,
+                    role TEXT NOT NULL DEFAULT 'operator',
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    created_by INTEGER REFERENCES users(id),
+                    last_login TEXT,
+                    failed_login_attempts INTEGER DEFAULT 0,
+                    locked_until TEXT
+                )
+            """)
+
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS login_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER REFERENCES users(id),
+                    username TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    failure_reason TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            # Indexes to speed up admin/audit screens
+            self.conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)
+            """)
+            self.conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_login_history_user_created
+                ON login_history(user_id, created_at)
+            """)
     
     def _ensure_default_admin(self):
         """Tạo admin mặc định nếu chưa có user nào."""
@@ -57,39 +121,74 @@ class UserRepository(BaseManager):
     @staticmethod
     def _hash_password(password: str, salt: str = None) -> tuple[str, str]:
         """
-        Hash password using SHA-256 with salt.
+        Hash password using bcrypt (secure, industry standard).
         
         Returns:
-            tuple: (password_hash, salt)
+            tuple: (password_hash, empty_salt)
+        
+        Raises:
+            RuntimeError: If bcrypt is not available
         """
-        if salt is None:
-            salt = secrets.token_hex(16)
+        if bcrypt is None:
+            raise RuntimeError(
+                "bcrypt library is required for password hashing. "
+                "Install it with: pip install bcrypt"
+            )
         
-        salted_password = f"{salt}{password}"
-        password_hash = hashlib.sha256(salted_password.encode()).hexdigest()
+        # bcrypt có giới hạn 72 bytes - truncate nếu password dài hơn
+        password_bytes = password.encode("utf-8")
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
+            logging.warning(f"Password truncated to 72 bytes (bcrypt limit)")
         
-        # Store as salt:hash format
-        return f"{salt}:{password_hash}", salt
+        # bcrypt stores salt inside the hash string (12 rounds)
+        hashed = bcrypt.hashpw(password_bytes, bcrypt.gensalt(12)).decode("utf-8")
+        return hashed, ""
     
     @staticmethod
-    def _verify_password(password: str, stored_hash: str) -> bool:
+    def _verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
         """
         Verify password against stored hash.
         
         Args:
             password: Plain text password to verify
-            stored_hash: Stored hash in format salt:hash
+            stored_hash: Stored hash (bcrypt or legacy salt:sha256)
         
         Returns:
-            bool: True if password matches
+            tuple: (is_valid: bool, needs_migration: bool)
         """
+        if not stored_hash:
+            return False, False
+
+        # bcrypt hash typically starts with $2b$ / $2a$ / $2y$
+        if stored_hash.startswith("$2"):
+            if bcrypt is None:
+                logger.error("bcrypt library not available for password verification")
+                return False, False
+            try:
+                # bcrypt có giới hạn 72 bytes - truncate nếu password dài hơn
+                password_bytes = password.encode("utf-8")
+                if len(password_bytes) > 72:
+                    password_bytes = password_bytes[:72]
+                
+                is_valid = bcrypt.checkpw(password_bytes, stored_hash.encode("utf-8"))
+                return is_valid, False  # Already using bcrypt, no migration needed
+            except Exception as e:
+                logger.warning(f"bcrypt verification failed: {e}")
+                return False, False
+
+        # Legacy: salt:sha256 - verify but mark for migration
         try:
             salt, hash_value = stored_hash.split(':')
             salted_password = f"{salt}{password}"
             computed_hash = hashlib.sha256(salted_password.encode()).hexdigest()
-            return secrets.compare_digest(computed_hash, hash_value)
-        except (ValueError, AttributeError):
-            return False
+            is_valid = secrets.compare_digest(computed_hash, hash_value)
+            if is_valid:
+                logger.info(f"Legacy password hash detected - will migrate to bcrypt")
+            return is_valid, is_valid  # Valid and needs migration
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Invalid password hash format: {e}")
+            return False, False
     
     # ==================== User CRUD ====================
     
@@ -299,7 +398,7 @@ class UserRepository(BaseManager):
     
     def authenticate(self, username: str, password: str) -> Dict[str, Any]:
         """
-        Xác thực user.
+        Xác thực user với auto-migration từ legacy SHA256 sang bcrypt.
         
         Args:
             username: Tên đăng nhập
@@ -334,8 +433,10 @@ class UserRepository(BaseManager):
             self._log_login_attempt(user['id'], username, False, "Tài khoản bị vô hiệu hóa")
             return {"success": False, "message": "Tài khoản đã bị vô hiệu hóa", "user": None}
         
-        # Verify password
-        if not self._verify_password(password, user['password_hash']):
+        # Verify password with migration detection
+        is_valid, needs_migration = self._verify_password(password, user['password_hash'])
+        
+        if not is_valid:
             self._increment_failed_attempts(user['id'])
             self._log_login_attempt(user['id'], username, False, "Sai mật khẩu")
             
@@ -353,6 +454,17 @@ class UserRepository(BaseManager):
         self._reset_failed_attempts(user['id'])
         self._update_last_login(user['id'])
         self._log_login_attempt(user['id'], username, True, None)
+        
+        # Auto-migrate legacy password to bcrypt
+        if needs_migration:
+            try:
+                new_hash, _ = self._hash_password(password)
+                cursor = self.conn.cursor()
+                cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user['id']))
+                self.conn.commit()
+                logger.info(f"Successfully migrated password to bcrypt for user: {username}")
+            except Exception as e:
+                logger.error(f"Failed to migrate password for user {username}: {e}")
         
         # Return user info without password_hash
         user_info = {

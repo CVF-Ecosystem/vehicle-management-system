@@ -12,6 +12,7 @@ import logging
 from auth.auth_manager import AuthManager
 from auth.permissions import Permission, ROLE_ADMIN, ROLE_OPERATOR, ROLE_VIEWER, get_role_display_name
 from config import FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_LARGE
+from translations import get_translation
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,15 @@ class UserManagementDialog(ctk.CTkToplevel):
         super().__init__(parent)
         
         self.parent = parent
+        self.app = parent  # Reference to main app for translations
         self.auth_manager = AuthManager.get_instance()
         
         # Check permission
         if not self.auth_manager.has_permission(Permission.USER_VIEW):
-            messagebox.showerror("Lỗi", "Bạn không có quyền truy cập chức năng này!")
+            messagebox.showerror(
+                self._t("dialog_error_title"),
+                self._t("err_no_permission")
+            )
             self.destroy()
             return
         
@@ -40,9 +45,17 @@ class UserManagementDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
     
+    def _t(self, key: str) -> str:
+        """Helper để lấy translation."""
+        if hasattr(self.app, 'get_translation'):
+            return self.app.get_translation(key)
+        # Fallback: use get_translation directly with app's language
+        lang = getattr(self.app, 'current_language', 'vi') if self.app else 'vi'
+        return get_translation(key, lang)
+    
     def _setup_window(self):
         """Cấu hình cửa sổ."""
-        self.title("Quản lý người dùng")
+        self.title(self._t("user_mgmt_title"))
         self.geometry("900x600")
         self.minsize(800, 500)
     
@@ -53,24 +66,24 @@ class UserManagementDialog(ctk.CTkToplevel):
         toolbar.pack(fill="x", padx=10, pady=10)
         
         # Add user button
-        if self.auth_manager.has_permission(Permission.USER_CREATE):
-            add_btn = ctk.CTkButton(
+        if self.auth_manager.has_permission(Permission.USER_MANAGE):
+            self.add_btn = ctk.CTkButton(
                 toolbar,
-                text="➕ Thêm người dùng",
+                text=self._t("user_mgmt_add"),
                 width=150,
                 command=self._add_user
             )
-            add_btn.pack(side="left", padx=(0, 10))
+            self.add_btn.pack(side="left", padx=(0, 10))
         
         # Refresh button
-        refresh_btn = ctk.CTkButton(
+        self.refresh_btn = ctk.CTkButton(
             toolbar,
-            text="🔄 Làm mới",
+            text=self._t("btn_refresh"),
             width=100,
             fg_color="gray",
             command=self._load_users
         )
-        refresh_btn.pack(side="left")
+        self.refresh_btn.pack(side="left")
         
         # Search
         search_frame = ctk.CTkFrame(toolbar, fg_color="transparent")
@@ -79,7 +92,7 @@ class UserManagementDialog(ctk.CTkToplevel):
         self.search_entry = ctk.CTkEntry(
             search_frame,
             width=200,
-            placeholder_text="Tìm kiếm..."
+            placeholder_text=self._t("user_mgmt_search")
         )
         self.search_entry.pack(side="left", padx=(0, 5))
         self.search_entry.bind("<KeyRelease>", lambda e: self._filter_users())
@@ -94,12 +107,12 @@ class UserManagementDialog(ctk.CTkToplevel):
         
         headers = [
             ("ID", 50),
-            ("Tên đăng nhập", 120),
-            ("Họ tên", 150),
-            ("Vai trò", 100),
-            ("Trạng thái", 80),
-            ("Đăng nhập cuối", 150),
-            ("Thao tác", 200)
+            (self._t("user_mgmt_col_username"), 120),
+            (self._t("user_mgmt_col_fullname"), 150),
+            (self._t("user_mgmt_col_role"), 100),
+            (self._t("user_mgmt_col_status"), 100),
+            (self._t("user_mgmt_col_last_login"), 140),
+            (self._t("user_mgmt_col_actions"), 160)
         ]
         
         for text, width in headers:
@@ -125,14 +138,13 @@ class UserManagementDialog(ctk.CTkToplevel):
             widget.destroy()
         self.user_rows = []
         
-        # Get users
-        result = self.auth_manager.list_users(include_inactive=True)
-        
-        if result['success']:
-            self.all_users = result['users']
+        # Get users - list_users returns a list directly, not a dict
+        try:
+            self.all_users = self.auth_manager.list_users(include_inactive=True)
             self._display_users(self.all_users)
-        else:
-            messagebox.showerror("Lỗi", result['message'])
+        except Exception as e:
+            logger.error(f"Error loading users: {e}")
+            messagebox.showerror(self._t("dialog_error_title"), str(e))
     
     def _display_users(self, users):
         """Hiển thị danh sách người dùng."""
@@ -166,8 +178,13 @@ class UserManagementDialog(ctk.CTkToplevel):
                 width=150
             ).pack(side="left", padx=5)
             
-            # Role
-            role_text = get_role_display_name(user['role'])
+            # Role - use translations
+            role_translation_key = {
+                ROLE_ADMIN: "role_admin",
+                ROLE_OPERATOR: "role_operator",
+                ROLE_VIEWER: "role_viewer"
+            }.get(user['role'], user['role'])
+            role_text = self._t(role_translation_key)
             role_color = {
                 ROLE_ADMIN: "#e74c3c",
                 ROLE_OPERATOR: "#3498db",
@@ -185,13 +202,13 @@ class UserManagementDialog(ctk.CTkToplevel):
             
             # Status
             is_active = user.get('is_active', True)
-            status_text = "✅ Hoạt động" if is_active else "❌ Vô hiệu"
+            status_text = self._t("user_mgmt_status_active") if is_active else self._t("user_mgmt_status_inactive")
             status_color = "green" if is_active else "red"
             
             ctk.CTkLabel(
                 row_frame,
                 text=status_text,
-                width=80,
+                width=100,
                 text_color=status_color
             ).pack(side="left", padx=5)
             
@@ -204,12 +221,12 @@ class UserManagementDialog(ctk.CTkToplevel):
                 except:
                     last_login_text = last_login
             else:
-                last_login_text = "Chưa đăng nhập"
+                last_login_text = self._t("user_mgmt_never_logged_in")
             
             ctk.CTkLabel(
                 row_frame,
                 text=last_login_text,
-                width=150
+                width=140
             ).pack(side="left", padx=5)
             
             # Actions
@@ -217,7 +234,7 @@ class UserManagementDialog(ctk.CTkToplevel):
             action_frame.pack(side="left", padx=5)
             
             # Edit button
-            if self.auth_manager.has_permission(Permission.USER_EDIT):
+            if self.auth_manager.has_permission(Permission.USER_MANAGE):
                 edit_btn = ctk.CTkButton(
                     action_frame,
                     text="✏️",
@@ -227,7 +244,7 @@ class UserManagementDialog(ctk.CTkToplevel):
                 edit_btn.pack(side="left", padx=2)
             
             # Change password button
-            if self.auth_manager.has_permission(Permission.USER_EDIT):
+            if self.auth_manager.has_permission(Permission.USER_MANAGE):
                 pwd_btn = ctk.CTkButton(
                     action_frame,
                     text="🔑",
@@ -239,7 +256,7 @@ class UserManagementDialog(ctk.CTkToplevel):
                 pwd_btn.pack(side="left", padx=2)
             
             # Toggle active button
-            if self.auth_manager.has_permission(Permission.USER_DELETE):
+            if self.auth_manager.has_permission(Permission.USER_MANAGE):
                 # Can't deactivate self
                 if current_user and user['id'] != current_user['id']:
                     toggle_text = "🚫" if is_active else "✅"
@@ -291,12 +308,14 @@ class UserManagementDialog(ctk.CTkToplevel):
     def _toggle_user_active(self, user: dict):
         """Bật/tắt trạng thái người dùng."""
         is_active = user.get('is_active', True)
-        action = "vô hiệu hóa" if is_active else "kích hoạt lại"
+        action_key = "user_mgmt_action_deactivate" if is_active else "user_mgmt_action_activate"
         
-        if not messagebox.askyesno(
-            "Xác nhận",
-            f"Bạn có chắc muốn {action} tài khoản '{user['username']}'?"
-        ):
+        confirm_msg = self._t("user_mgmt_confirm_toggle").format(
+            action=self._t(action_key),
+            username=user['username']
+        )
+        
+        if not messagebox.askyesno(self._t("confirm_title"), confirm_msg):
             return
         
         new_status = not is_active
@@ -306,10 +325,11 @@ class UserManagementDialog(ctk.CTkToplevel):
         )
         
         if result['success']:
-            messagebox.showinfo("Thành công", f"Đã {action} tài khoản!")
+            success_msg = self._t("user_mgmt_toggle_success").format(action=self._t(action_key))
+            messagebox.showinfo(self._t("dialog_info_title"), success_msg)
             self._load_users()
         else:
-            messagebox.showerror("Lỗi", result['message'])
+            messagebox.showerror(self._t("dialog_error_title"), result['message'])
 
 
 class UserEditDialog(ctk.CTkToplevel):
@@ -325,6 +345,9 @@ class UserEditDialog(ctk.CTkToplevel):
         self.auth_manager = AuthManager.get_instance()
         self.is_edit = user is not None
         
+        # Get app reference for translations
+        self.app = parent.app if hasattr(parent, 'app') else parent
+        
         self._setup_window()
         self._build_ui()
         
@@ -334,11 +357,19 @@ class UserEditDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
     
+    def _t(self, key: str) -> str:
+        """Helper để lấy translation."""
+        if hasattr(self.app, 'get_translation'):
+            return self.app.get_translation(key)
+        # Fallback: use get_translation directly with app's language
+        lang = getattr(self.app, 'current_language', 'vi') if self.app else 'vi'
+        return get_translation(key, lang)
+    
     def _setup_window(self):
         """Cấu hình cửa sổ."""
-        title = "Sửa người dùng" if self.is_edit else "Thêm người dùng"
+        title = self._t("user_edit_title") if self.is_edit else self._t("user_add_title")
         self.title(title)
-        self.geometry("450x400")
+        self.geometry("450x500")
         self.resizable(False, False)
     
     def _build_ui(self):
@@ -349,7 +380,7 @@ class UserEditDialog(ctk.CTkToplevel):
         # Username
         ctk.CTkLabel(
             main_frame,
-            text="Tên đăng nhập: *",
+            text=self._t("user_edit_username") + " *",
             font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
         ).pack(anchor="w", pady=(0, 5))
         
@@ -362,7 +393,7 @@ class UserEditDialog(ctk.CTkToplevel):
         # Full name
         ctk.CTkLabel(
             main_frame,
-            text="Họ tên:",
+            text=self._t("user_edit_fullname"),
             font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
         ).pack(anchor="w", pady=(0, 5))
         
@@ -373,7 +404,7 @@ class UserEditDialog(ctk.CTkToplevel):
         if not self.is_edit:
             ctk.CTkLabel(
                 main_frame,
-                text="Mật khẩu: *",
+                text=self._t("user_edit_password") + " *",
                 font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
             ).pack(anchor="w", pady=(0, 5))
             
@@ -383,7 +414,7 @@ class UserEditDialog(ctk.CTkToplevel):
         # Role
         ctk.CTkLabel(
             main_frame,
-            text="Vai trò: *",
+            text=self._t("user_edit_role") + " *",
             font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
         ).pack(anchor="w", pady=(0, 5))
         
@@ -392,9 +423,9 @@ class UserEditDialog(ctk.CTkToplevel):
         role_frame.pack(fill="x", pady=(0, 15))
         
         roles = [
-            (ROLE_ADMIN, "👑 Admin - Toàn quyền"),
-            (ROLE_OPERATOR, "👤 Operator - Vận hành"),
-            (ROLE_VIEWER, "👁️ Viewer - Chỉ xem")
+            (ROLE_ADMIN, self._t("role_admin_desc")),
+            (ROLE_OPERATOR, self._t("role_operator_desc")),
+            (ROLE_VIEWER, self._t("role_viewer_desc"))
         ]
         
         for role_value, role_text in roles:
@@ -410,14 +441,14 @@ class UserEditDialog(ctk.CTkToplevel):
         if self.is_edit:
             ctk.CTkLabel(
                 main_frame,
-                text="Trạng thái:",
+                text=self._t("user_edit_status"),
                 font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
             ).pack(anchor="w", pady=(0, 5))
             
             self.active_var = ctk.BooleanVar(value=True)
             active_cb = ctk.CTkCheckBox(
                 main_frame,
-                text="Đang hoạt động",
+                text=self._t("user_edit_is_active"),
                 variable=self.active_var
             )
             active_cb.pack(anchor="w", pady=(0, 15))
@@ -436,7 +467,7 @@ class UserEditDialog(ctk.CTkToplevel):
         
         save_btn = ctk.CTkButton(
             button_frame,
-            text="💾 Lưu",
+            text=self._t("btn_save"),
             width=120,
             command=self._save
         )
@@ -444,7 +475,7 @@ class UserEditDialog(ctk.CTkToplevel):
         
         cancel_btn = ctk.CTkButton(
             button_frame,
-            text="Hủy",
+            text=self._t("btn_cancel"),
             width=120,
             fg_color="gray",
             command=self.destroy
@@ -471,13 +502,13 @@ class UserEditDialog(ctk.CTkToplevel):
         
         # Validate
         if not username:
-            self.error_label.configure(text="Vui lòng nhập tên đăng nhập")
+            self.error_label.configure(text=self._t("user_edit_err_no_username"))
             return
         
         if not self.is_edit:
             password = self.password_entry.get()
             if len(password) < 6:
-                self.error_label.configure(text="Mật khẩu phải có ít nhất 6 ký tự")
+                self.error_label.configure(text=self._t("user_edit_err_pwd_short"))
                 return
         
         if self.is_edit:
@@ -498,8 +529,8 @@ class UserEditDialog(ctk.CTkToplevel):
             )
         
         if result['success']:
-            action = "cập nhật" if self.is_edit else "tạo"
-            messagebox.showinfo("Thành công", f"Đã {action} người dùng!")
+            action_key = "user_edit_updated" if self.is_edit else "user_edit_created"
+            messagebox.showinfo(self._t("dialog_info_title"), self._t(action_key))
             self.destroy()
         else:
             self.error_label.configure(text=result['message'])
@@ -517,6 +548,9 @@ class LoginHistoryDialog(ctk.CTkToplevel):
         self.user_id = user_id
         self.auth_manager = AuthManager.get_instance()
         
+        # Get app reference for translations
+        self.app = parent.app if hasattr(parent, 'app') else parent
+        
         self._setup_window()
         self._build_ui()
         self._load_history()
@@ -524,9 +558,17 @@ class LoginHistoryDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
     
+    def _t(self, key: str) -> str:
+        """Helper để lấy translation."""
+        if hasattr(self.app, 'get_translation'):
+            return self.app.get_translation(key)
+        # Fallback: use get_translation directly with app's language
+        lang = getattr(self.app, 'current_language', 'vi') if self.app else 'vi'
+        return get_translation(key, lang)
+    
     def _setup_window(self):
         """Cấu hình cửa sổ."""
-        self.title("Lịch sử đăng nhập")
+        self.title(self._t("login_history_title"))
         self.geometry("800x500")
     
     def _build_ui(self):
@@ -537,7 +579,7 @@ class LoginHistoryDialog(ctk.CTkToplevel):
         
         ctk.CTkLabel(
             header,
-            text="📋 Lịch sử đăng nhập",
+            text="📋 " + self._t("login_history_title"),
             font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_LARGE, weight="bold")
         ).pack(side="left")
         
@@ -550,11 +592,11 @@ class LoginHistoryDialog(ctk.CTkToplevel):
         header_row.pack(fill="x", pady=(0, 5))
         
         headers = [
-            ("Thời gian", 150),
-            ("Người dùng", 100),
-            ("Hành động", 100),
-            ("Kết quả", 80),
-            ("Lý do lỗi", 200),
+            (self._t("login_history_col_time"), 150),
+            (self._t("login_history_col_user"), 100),
+            (self._t("login_history_col_action"), 100),
+            (self._t("login_history_col_result"), 80),
+            (self._t("login_history_col_reason"), 200),
             ("IP", 120)
         ]
         
@@ -598,9 +640,9 @@ class LoginHistoryDialog(ctk.CTkToplevel):
             
             # Action
             action_map = {
-                'login': 'Đăng nhập',
-                'logout': 'Đăng xuất',
-                'password_change': 'Đổi MK'
+                'login': self._t("login_history_action_login"),
+                'logout': self._t("login_history_action_logout"),
+                'password_change': self._t("login_history_action_pwd_change")
             }
             action = action_map.get(record.get('action'), record.get('action', '-'))
             ctk.CTkLabel(row, text=action, width=100).pack(side="left", padx=5)

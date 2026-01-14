@@ -25,6 +25,7 @@ from ui.outbound_tab import OutboundTab
 from ui.stock_tab import StockTab
 from ui.dashboard_tab import DashboardTab
 from ui.search_tab import SearchTab
+from ui.yard_map_tab import YardMapTab
 from ui.log_tab import LogTab
 from ui.dispatch_tab import DispatchTab
 from ui.components import Toast, DateRangeDialog
@@ -40,38 +41,65 @@ from auth.auth_manager import AuthManager
 from auth.permissions import Permission, get_role_display_name
 from ui.login_dialog import LoginDialog, ChangePasswordDialog
 from ui.user_management_dialog import UserManagementDialog, LoginHistoryDialog
+
+# Phase 2.6: Notification imports
+from core.notification_service import NotificationService, get_notification_service
+from ui.notification_panel import NotificationPanel, NotificationBell, NotificationSettingsDialog
+
+
 class InventoryApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         setup_logging()
-        
+
+        # --- UNLOCK ADMIN nếu có file unlock.txt ---
+        try:
+            unlock_path = os.path.join(os.getcwd(), "unlock.txt")
+            if os.path.exists(unlock_path):
+                from database.user_repository import UserRepository
+                user_repo = UserRepository()
+                admin = user_repo.get_user_by_username("admin")
+                if admin:
+                    user_repo.change_password(admin['id'], "admin123")
+                    user_repo._reset_failed_attempts(admin['id'])
+                    user_repo.update_user(admin['id'], is_active=True)
+                    logging.warning("Đã mở khóa và reset mật khẩu admin do phát hiện unlock.txt!")
+                os.remove(unlock_path)
+        except Exception as e:
+            logging.error(f"Lỗi khi xử lý unlock.txt: {e}")
+
         self.config = load_config()
         self.current_lang = ctk.StringVar(value=self.config.get("Settings", "language", fallback="vi"))
         self.current_theme = ctk.StringVar(value=self.config.get("Settings", "theme", fallback="System"))
-        
+
         ctk.set_appearance_mode(self.current_theme.get())
-        
+
         self.font_normal = ctk.CTkFont(family="Arial", size=14)
         self.font_bold = ctk.CTkFont(family="Arial", size=14, weight="bold")
         self.font_small_italic = ctk.CTkFont(family="Arial", size=12, slant="italic")
-        
+
         self.vehicle_manager = VehicleManager()
         self.entity_manager = EntityManager()
         self.dispatch_manager = DispatchManager()
         self.location_manager = LocationManager()
         self.layout_manager = LayoutManager(self.location_manager)
-        
+
         self.api_client = ApiClient(self.vehicle_manager, self.entity_manager, self.dispatch_manager)
 
         # --- BỔ SUNG: Tạo các đối tượng Font tập trung ---
         self.font_normal = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
         self.font_bold = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL, weight="bold")
         self.font_large_bold = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_LARGE, weight="bold")
+        self.font_small = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_SMALL)
+        self.font_small_italic = ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_SMALL, slant="italic")
         # -------------------------------------------------
-        
+
         # Phase 1C: Initialize Auth Manager
         self.auth_manager = AuthManager.get_instance()
-        
+
+        # Phase 2.6: Initialize Notification Service
+        self.notification_service = NotificationService.get_instance()
+
         # Show login dialog first
         self._show_login_dialog()
 
@@ -98,6 +126,12 @@ class InventoryApp(ctk.CTk):
         # Build UI
         self._build_ui()
         
+        # === PHASE 2.4: Setup global keyboard shortcuts ===
+        self._setup_keyboard_shortcuts()
+        
+        # === PHASE 2.6: Start notification checks ===
+        self._setup_notification_checks()
+        
         logging.info(f"Ứng dụng {APP_VERSION} đã khởi động thành công.")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -123,6 +157,9 @@ class InventoryApp(ctk.CTk):
 
         self._build_tabs()
         self.tab_container = ctk.CTkFrame(self, fg_color="transparent")
+        
+        # === PHASE 2.6: Build notification panel ===
+        self._build_notification_panel()
                 
         self._build_status_bar()
         self.after(100, self.inbound_tab.update_dropdowns)
@@ -161,22 +198,26 @@ class InventoryApp(ctk.CTk):
         user_menu_label = f"👤 {current_user['username']}" if current_user else "👤 Tài khoản"
         self.main_menu.add_cascade(label=user_menu_label, menu=self.user_menu)
 
-        self.file_menu.add_command(label=self.get_translation("menu_exit"), command=self.on_close)
+        self.file_menu.add_command(label=self.get_translation("menu_exit"), command=self.on_close, accelerator="Alt+F4")
         self.tools_menu.add_command(label=self.get_translation("menu_create_vouchers"), command=self.open_voucher_creation_tool)
         # === CẬP NHẬT: Sử dụng key dịch thuật ===
         self.tools_menu.add_command(label=self.get_translation("menu_archive_explorer"), command=self.open_archive_explorer)
         self.tools_menu.add_separator()
         self.tools_menu.add_command(label=self.get_translation("menu_deleted_vehicles"), command=self.open_deleted_vehicles)
+        self.tools_menu.add_separator()
+        # === PHASE 3: PDF Report & Print Templates ===
+        self.tools_menu.add_command(label=self.get_translation("menu_pdf_report"), command=self._open_pdf_report)
+        self.tools_menu.add_command(label=self.get_translation("menu_print_templates"), command=self._open_print_templates)
         # ===================
 
         # Phase 1C: User menu items
-        self.user_menu.add_command(label="🔑 Đổi mật khẩu", command=self._open_change_password)
+        self.user_menu.add_command(label=self.get_translation("menu_change_password"), command=self._open_change_password)
         if self.auth_manager.has_permission(Permission.USER_VIEW):
-            self.user_menu.add_command(label="👥 Quản lý người dùng", command=self._open_user_management)
+            self.user_menu.add_command(label=self.get_translation("menu_user_management"), command=self._open_user_management)
         if self.auth_manager.has_permission(Permission.AUDIT_VIEW):
-            self.user_menu.add_command(label="📋 Lịch sử đăng nhập", command=self._open_login_history)
+            self.user_menu.add_command(label=self.get_translation("menu_login_history"), command=self._open_login_history)
         self.user_menu.add_separator()
-        self.user_menu.add_command(label="🚪 Đăng xuất", command=self._logout)
+        self.user_menu.add_command(label=self.get_translation("menu_logout"), command=self._logout, accelerator="Ctrl+Q")
 
 
         self.settings_menu.add_cascade(label=self.get_translation("menu_language"), menu=self.lang_menu)
@@ -194,13 +235,20 @@ class InventoryApp(ctk.CTk):
         self.settings_menu.add_command(label=self.get_translation("menu_manage_layout"), command=self.manage_layout)
         self.settings_menu.add_command(label=self.get_translation("menu_select_voucher_template"), command=self.select_voucher_template)
         self.settings_menu.add_separator()
+        # Phase 2.6: Notification settings
+        self.settings_menu.add_command(label=self.get_translation("menu_notification_settings"), command=self._open_notification_settings)
+        self.settings_menu.add_separator()
+        # === PHASE 3: Config & Onboarding ===
+        self.settings_menu.add_command(label=self.get_translation("menu_config"), command=self._open_config_dialog)
+        self.settings_menu.add_command(label=self.get_translation("menu_onboarding"), command=self._open_onboarding)
+        self.settings_menu.add_separator()
         self.settings_menu.add_command(label=self.get_translation("menu_archive"), command=self.prompt_archive_data)
 
     def _build_tabs(self):
         self.tabs = ctk.CTkTabview(self, command=self.on_tab_change)
         self.tabs.pack(fill="both", expand=True, padx=10, pady=10)
 
-        tab_names = ["tab_inbound", "tab_dispatch", "tab_outbound", "tab_stock", "tab_search", "tab_dashboard", "tab_log"]
+        tab_names = ["tab_inbound", "tab_dispatch", "tab_outbound", "tab_stock", "tab_search", "tab_yard_map", "tab_dashboard", "tab_log"]
         self.tab_map = {name: self.tabs.add(self.get_translation(name)) for name in tab_names}
 
         # === SỬA LỖI: Khởi tạo tất cả các đối tượng tab trước ===
@@ -209,6 +257,7 @@ class InventoryApp(ctk.CTk):
         self.outbound_tab = OutboundTab(self.tab_map["tab_outbound"], self)
         self.stock_tab = StockTab(self.tab_map["tab_stock"], self)
         self.search_tab = SearchTab(self.tab_map["tab_search"], self)
+        self.yard_map_tab = YardMapTab(self.tab_map["tab_yard_map"], self)
         self.dashboard_tab = DashboardTab(self.tab_map["tab_dashboard"], self)
         self.log_tab = LogTab(self.tab_map["tab_log"], self)
         
@@ -218,7 +267,7 @@ class InventoryApp(ctk.CTk):
 
     def update_all_tabs_language(self):
         """Cập nhật ngôn ngữ cho tất cả các tab."""
-        for tab in [self.inbound_tab, self.dispatch_tab, self.outbound_tab, self.stock_tab, self.search_tab, self.dashboard_tab]:
+        for tab in [self.inbound_tab, self.dispatch_tab, self.outbound_tab, self.stock_tab, self.search_tab, self.yard_map_tab, self.dashboard_tab]:
             if hasattr(tab, 'update_language'):
                 tab.update_language()
 
@@ -230,10 +279,16 @@ class InventoryApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(status_bar_frame, textvariable=self.status_var, anchor="w", font=self.font_normal)
         self.status_label.pack(side="left", fill="x", expand=True, padx=10)
         
-        # Phase 1C: User info display
+        # Phase 1C: User info display (without logout button)
         current_user = self.auth_manager.get_current_user()
         if current_user:
-            role_display = get_role_display_name(current_user['role'])
+            # Use translation for role display
+            role_key = {
+                'admin': 'role_admin',
+                'operator': 'role_operator', 
+                'viewer': 'role_viewer'
+            }.get(current_user['role'], current_user['role'])
+            role_display = self.get_translation(role_key)
             user_text = f"👤 {current_user['username']} ({role_display})"
             self.user_label = ctk.CTkLabel(
                 status_bar_frame,
@@ -243,18 +298,6 @@ class InventoryApp(ctk.CTk):
                 text_color="#3498db"
             )
             self.user_label.pack(side="right", padx=(0, 10))
-            
-            # Logout button
-            logout_btn = ctk.CTkButton(
-                status_bar_frame,
-                text="🚪",
-                width=30,
-                height=25,
-                fg_color="transparent",
-                hover_color="#e74c3c",
-                command=self._logout
-            )
-            logout_btn.pack(side="right", padx=(0, 5))
         
         self.author_label = ctk.CTkLabel(status_bar_frame, text=self.get_translation("author_credit"), anchor="e", font=self.font_normal)
         self.author_label.pack(side="right", padx=10)
@@ -341,6 +384,218 @@ class InventoryApp(ctk.CTk):
         y_pos = y - 40 if y > 40 else 0
         self.geometry(f'{width}x{height}+{x}+{y_pos}')
 
+    # === PHASE 2.6: Notification System ===
+    def _build_notification_panel(self):
+        """Tạo panel hiển thị thông báo ở góc màn hình."""
+        # Create notification panel (positioned at bottom-right)
+        self.notification_panel = NotificationPanel(
+            self,
+            notification_service=self.notification_service,
+            position="bottom-right",
+        )
+        # Only show panel if there are notifications
+        if self.notification_panel.service.get_unread():
+            self.notification_panel.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-40)
+    
+    def _setup_notification_checks(self):
+        """Thiết lập kiểm tra thông báo định kỳ."""
+        # Run initial checks after a short delay
+        self.after(5000, self._run_notification_checks)
+        
+        # Schedule periodic checks (every 30 minutes)
+        self._notification_check_job = self.after(30 * 60 * 1000, self._periodic_notification_check)
+    
+    def _run_notification_checks(self):
+        """Chạy các kiểm tra thông báo."""
+        try:
+            self.notification_service.run_all_checks(
+                vehicle_manager=self.vehicle_manager,
+                location_manager=self.location_manager
+            )
+        except Exception as e:
+            logging.error(f"Error running notification checks: {e}")
+    
+    def _periodic_notification_check(self):
+        """Kiểm tra thông báo định kỳ."""
+        self._run_notification_checks()
+        # Reschedule
+        self._notification_check_job = self.after(30 * 60 * 1000, self._periodic_notification_check)
+    
+    def _open_notification_settings(self):
+        """Mở dialog cài đặt thông báo."""
+        NotificationSettingsDialog(self, self.notification_service)
+    # === END PHASE 2.6 ===
+
+    # === PHASE 2.4: Keyboard Shortcuts ===
+    def _setup_keyboard_shortcuts(self):
+        """Thiết lập các phím tắt toàn cục."""
+        # F5 - Refresh current view
+        self.bind("<F5>", self._shortcut_refresh)
+        
+        # Ctrl+N - Go to Inbound tab (new vehicle)
+        self.bind("<Control-n>", self._shortcut_new_vehicle)
+        self.bind("<Control-N>", self._shortcut_new_vehicle)
+        
+        # Ctrl+F - Go to Search tab
+        self.bind("<Control-f>", self._shortcut_search)
+        self.bind("<Control-F>", self._shortcut_search)
+        
+        # Ctrl+E - Export from current tab
+        self.bind("<Control-e>", self._shortcut_export)
+        self.bind("<Control-E>", self._shortcut_export)
+        
+        # Ctrl+D - Go to Dispatch tab
+        self.bind("<Control-d>", self._shortcut_dispatch)
+        self.bind("<Control-D>", self._shortcut_dispatch)
+        
+        # Ctrl+M - Go to Yard Map tab
+        self.bind("<Control-m>", self._shortcut_yard_map)
+        self.bind("<Control-M>", self._shortcut_yard_map)
+        
+        # Ctrl+B - Go to Dashboard/Reports tab
+        self.bind("<Control-b>", self._shortcut_dashboard)
+        self.bind("<Control-B>", self._shortcut_dashboard)
+        
+        # Ctrl+O - Go to Outbound (single) tab
+        self.bind("<Control-o>", self._shortcut_outbound)
+        self.bind("<Control-O>", self._shortcut_outbound)
+        
+        # Ctrl+T - Go to Stock tab
+        self.bind("<Control-t>", self._shortcut_stock)
+        self.bind("<Control-T>", self._shortcut_stock)
+        
+        # Escape - Clear selection/reset filters
+        self.bind("<Escape>", self._shortcut_escape)
+        
+        # Ctrl+Q - Logout
+        self.bind("<Control-q>", self._shortcut_logout)
+        self.bind("<Control-Q>", self._shortcut_logout)
+        
+        # F1 - Help/show shortcuts
+        self.bind("<F1>", self._shortcut_help)
+        
+        logging.info("Keyboard shortcuts initialized")
+
+    def _shortcut_refresh(self, event=None):
+        """F5 - Làm mới tab hiện tại."""
+        selected_tab = self.tabs.get()
+        
+        if selected_tab == self.get_translation("tab_stock"):
+            self.stock_tab.refresh_all()
+        elif selected_tab == self.get_translation("tab_inbound"):
+            self.inbound_tab.update_dropdowns()
+        elif selected_tab == self.get_translation("tab_dispatch"):
+            self.dispatch_tab.update_dropdowns()
+            self.dispatch_tab.load_open_dispatch()
+        elif selected_tab == self.get_translation("tab_outbound"):
+            self.outbound_tab.update_dropdowns()
+        elif selected_tab == self.get_translation("tab_search"):
+            if hasattr(self.search_tab, 'perform_search'):
+                self.search_tab.perform_search()
+        elif selected_tab == self.get_translation("tab_yard_map"):
+            if hasattr(self.yard_map_tab, 'refresh_data'):
+                self.yard_map_tab.refresh_data()
+        elif selected_tab == self.get_translation("tab_dashboard"):
+            if hasattr(self.dashboard_tab, 'update_dashboard'):
+                self.dashboard_tab.update_dashboard()
+        
+        self.show_toast(self.get_translation("shortcut_refreshed"))
+        return "break"  # Prevent default handling
+
+    def _shortcut_new_vehicle(self, event=None):
+        """Ctrl+N - Chuyển đến tab Nhập bãi."""
+        self.tabs.set(self.get_translation("tab_inbound"))
+        self.inbound_tab.update_dropdowns()
+        # Focus vào trường VIN
+        if hasattr(self.inbound_tab, 'entry_vin'):
+            self.after(100, lambda: self.inbound_tab.entry_vin.focus_set())
+        return "break"
+
+    def _shortcut_search(self, event=None):
+        """Ctrl+F - Chuyển đến tab Tra cứu."""
+        self.tabs.set(self.get_translation("tab_search"))
+        # Focus vào trường tìm kiếm
+        if hasattr(self.search_tab, 'search_entry'):
+            self.after(100, lambda: self.search_tab.search_entry.focus_set())
+        return "break"
+
+    def _shortcut_export(self, event=None):
+        """Ctrl+E - Export từ tab hiện tại."""
+        selected_tab = self.tabs.get()
+        
+        if selected_tab == self.get_translation("tab_stock"):
+            if hasattr(self.stock_tab, 'export_stock'):
+                self.stock_tab.export_stock()
+        elif selected_tab == self.get_translation("tab_dashboard"):
+            if hasattr(self.dashboard_tab, 'export_pdf'):
+                self.dashboard_tab.export_pdf()
+        else:
+            self.show_toast(self.get_translation("shortcut_export_not_available"))
+        return "break"
+
+    def _shortcut_dispatch(self, event=None):
+        """Ctrl+D - Chuyển đến tab Xuất bãi (nhiều xe)."""
+        self.tabs.set(self.get_translation("tab_dispatch"))
+        self.dispatch_tab.update_dropdowns()
+        return "break"
+
+    def _shortcut_yard_map(self, event=None):
+        """Ctrl+M - Chuyển đến tab Bản đồ bãi."""
+        self.tabs.set(self.get_translation("tab_yard_map"))
+        if hasattr(self.yard_map_tab, 'refresh_data'):
+            self.yard_map_tab.refresh_data()
+        return "break"
+
+    def _shortcut_dashboard(self, event=None):
+        """Ctrl+B - Chuyển đến tab Báo cáo."""
+        self.tabs.set(self.get_translation("tab_dashboard"))
+        return "break"
+
+    def _shortcut_escape(self, event=None):
+        """Escape - Xóa selection hoặc reset filters."""
+        selected_tab = self.tabs.get()
+        
+        if selected_tab == self.get_translation("tab_stock"):
+            if hasattr(self.stock_tab, 'selected_vins'):
+                self.stock_tab.selected_vins.clear()
+                self.stock_tab.update_stock_list()
+                self.stock_tab._update_selected_count_label()
+        elif selected_tab == self.get_translation("tab_search"):
+            if hasattr(self.search_tab, 'search_entry'):
+                self.search_tab.search_entry.delete(0, "end")
+        
+        return "break"
+
+    def _shortcut_logout(self, event=None):
+        """Ctrl+Q - Đăng xuất."""
+        self._logout()
+        return "break"
+    
+    def _shortcut_outbound(self, event=None):
+        """Ctrl+O - Chuyển đến tab Xuất lẻ."""
+        self.tabs.set(self.get_translation("tab_outbound"))
+        self.outbound_tab.update_dropdowns()
+        if hasattr(self.outbound_tab, 'scan_entry'):
+            self.after(100, lambda: self.outbound_tab.scan_entry.focus_set())
+        return "break"
+    
+    def _shortcut_stock(self, event=None):
+        """Ctrl+T - Chuyển đến tab Tồn bãi."""
+        self.tabs.set(self.get_translation("tab_stock"))
+        return "break"
+    
+    def _shortcut_help(self, event=None):
+        """F1 - Hiển thị danh sách phím tắt."""
+        shortcuts_text = self.get_translation("help_shortcuts_text")
+        from tkinter import messagebox
+        messagebox.showinfo(
+            self.get_translation("help_shortcuts_title"),
+            shortcuts_text,
+            parent=self
+        )
+        return "break"
+    # === END PHASE 2.4 ===
+
     def show_toast(self, message):
         """Hiển thị một thông báo toast ngắn."""
         Toast(self, message)
@@ -395,6 +650,28 @@ class InventoryApp(ctk.CTk):
             vehicle_manager=self.vehicle_manager,
             on_restore_callback=self.on_data_changed
         )
+
+    # === PHASE 3: New Dialog Methods ===
+    def _open_pdf_report(self):
+        """Mở dialog tạo báo cáo PDF."""
+        from ui.pdf_report_dialog import PDFReportDialog
+        PDFReportDialog(self)
+    
+    def _open_print_templates(self):
+        """Mở dialog quản lý mẫu in."""
+        from ui.print_templates_dialog import PrintTemplatesDialog
+        PrintTemplatesDialog(self)
+    
+    def _open_config_dialog(self):
+        """Mở dialog quản lý cấu hình."""
+        from ui.config_dialog import ConfigDialog
+        ConfigDialog(self)
+    
+    def _open_onboarding(self):
+        """Mở hướng dẫn sử dụng."""
+        from ui.onboarding_dialog import OnboardingDialog
+        OnboardingDialog(self)
+    # === END PHASE 3 ===
 
     def prompt_for_history_export(self):
         dialog = DateRangeDialog(self, title=self.get_translation("menu_export_history"))

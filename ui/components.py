@@ -1,9 +1,472 @@
 # ui/components.py
 import customtkinter as ctk
-from tkinter import Menu, Toplevel, Label, messagebox, ttk
+from tkinter import Menu, Toplevel, Label, messagebox, ttk, Listbox, END
 from tkcalendar import DateEntry
 from datetime import datetime
 from data_normalizer import normalizer
+
+
+def harmonize_combobox_style(combo: ctk.CTkComboBox) -> None:
+    """Apply a minimal, stable theme pass to CTkComboBox.
+
+    Note: forcing CTkComboBox to mimic CTkEntry (fg/border/corner) can render
+    poorly on some systems (e.g., border appears only at the rounded ends).
+    This helper keeps CTkComboBox's native styling and only applies best-effort
+    dropdown/button/menu colors from theme tokens.
+    """
+    try:
+        button_theme = ctk.ThemeManager.theme.get("CTkButton", {})
+        dropdown_theme = ctk.ThemeManager.theme.get("DropdownMenu", {})
+
+        desired_config = {
+            # Keep dropdown button theme-consistent.
+            "button_color": button_theme.get("fg_color"),
+            "button_hover_color": button_theme.get("hover_color"),
+
+            # Dropdown menu colors (if supported by the installed CTk version).
+            "dropdown_fg_color": dropdown_theme.get("fg_color"),
+            "dropdown_hover_color": dropdown_theme.get("hover_color"),
+            "dropdown_text_color": dropdown_theme.get("text_color"),
+        }
+
+        # Apply best-effort, skipping None and unsupported keys.
+        for key, value in desired_config.items():
+            if value is None:
+                continue
+            try:
+                combo.configure(**{key: value})
+            except Exception:
+                continue
+    except Exception:
+        # Best-effort styling only; never break UI construction.
+        return
+
+
+# === PHASE 2.5: AutocompleteEntry Widget ===
+class AutocompleteEntry(ctk.CTkFrame):
+    """
+    Entry widget với tính năng gợi ý tự động (autocomplete).
+    Hiển thị dropdown listbox với các gợi ý khi người dùng nhập.
+    Có thể thêm nút dropdown để xổ toàn bộ danh sách.
+    """
+    def __init__(self, parent, suggestions=None, max_suggestions=10, show_dropdown_button=True, **kwargs):
+        """
+        Args:
+            parent: Parent widget
+            suggestions: List hoặc function trả về list gợi ý
+            max_suggestions: Số lượng gợi ý tối đa hiển thị
+            show_dropdown_button: Hiển thị nút dropdown (▼) bên phải
+            **kwargs: Các thuộc tính khác cho CTkEntry
+        """
+        # Tạo frame container với border giống entry chuẩn của CTk (theo theme hiện tại)
+        entry_theme = ctk.ThemeManager.theme.get("CTkEntry", {})
+        entry_fg = entry_theme.get("fg_color", ("gray95", "gray17"))
+        entry_border = entry_theme.get("border_color", ("gray65", "gray28"))
+        entry_corner_radius = entry_theme.get("corner_radius", 6)
+        entry_border_width = entry_theme.get("border_width", 2)
+
+        super().__init__(
+            parent,
+            fg_color=entry_fg,
+            corner_radius=entry_corner_radius,
+            border_width=entry_border_width,
+            border_color=entry_border,
+        )
+        
+        self._suggestions = suggestions if suggestions else []
+        self._suggestions_func = None
+        if callable(suggestions):
+            self._suggestions_func = suggestions
+            self._suggestions = []
+        
+        self._max_suggestions = max_suggestions
+        self._listbox_visible = False
+        self._show_dropdown_button = show_dropdown_button
+        self._ignore_focus_out_once = False
+        
+        # Extract entry-specific kwargs (exclude border settings since we handle them)
+        entry_kwargs = {k: v for k, v in kwargs.items() if k in [
+            'width', 'height', 'placeholder_text_color',
+            'placeholder_text', 'font', 'state', 'textvariable'
+        ]}
+        
+        # Configure grid
+        self.grid_columnconfigure(0, weight=1)
+        
+        # Create entry without border (border is on the frame)
+        self.entry = ctk.CTkEntry(
+            self, 
+            border_width=0, 
+            fg_color="transparent",
+            **entry_kwargs
+        )
+        inner_pad_y = max(int(entry_border_width), 1)
+        self.entry.grid(row=0, column=0, sticky="ew", padx=(6, 0), pady=inner_pad_y)
+        
+        # Create dropdown button if enabled - keep it subtle and theme-consistent
+        if self._show_dropdown_button:
+            label_theme = ctk.ThemeManager.theme.get("CTkLabel", {})
+            button_theme = ctk.ThemeManager.theme.get("CTkButton", {})
+            text_color = label_theme.get("text_color", ("gray10", "gray90"))
+
+            # Match primary button (e.g. "Tìm kiếm") for a clear, consistent affordance.
+            btn_color = button_theme.get("fg_color")
+            btn_hover = button_theme.get("hover_color")
+
+            # Size/shape: align with entry corner and height.
+            desired_height = entry_kwargs.get("height")
+            if desired_height is None:
+                try:
+                    desired_height = int(self.entry.cget("height"))
+                except Exception:
+                    desired_height = 28
+
+            btn_corner = max(int(entry_corner_radius) - 1, 0)
+            self._dropdown_btn = ctk.CTkButton(
+                self, 
+                text="▼", 
+                width=30,
+                height=desired_height - 4,
+                corner_radius=btn_corner,
+                command=self._toggle_dropdown,
+                fg_color=btn_color,
+                hover_color=btn_hover,
+                text_color=text_color,
+                font=("Arial", 10),
+            )
+            self._dropdown_btn.grid(row=0, column=1, padx=(2, 4), pady=inner_pad_y)
+            self._dropdown_btn.bind("<Button-1>", self._on_dropdown_btn_press)
+        
+        # Create popup window for listbox
+        self._popup = None
+        self._listbox = None
+        
+        # Bind events
+        self.entry.bind("<KeyRelease>", self._on_key_release)
+        self.entry.bind("<FocusOut>", self._on_focus_out)
+        self.entry.bind("<Down>", self._on_arrow_down)
+        self.entry.bind("<Up>", self._on_arrow_up)
+        self.entry.bind("<Return>", self._on_enter)
+        self.entry.bind("<Escape>", self._hide_listbox)
+        self.entry.bind("<Tab>", self._on_tab)
+        
+        # Bind focus events to change border color
+        self.entry.bind("<FocusIn>", self._on_focus_in)
+    
+    def _on_focus_in(self, event):
+        """Highlight border when focused."""
+        entry_theme = ctk.ThemeManager.theme.get("CTkEntry", {})
+        focus_border = entry_theme.get("border_color_hover") or entry_theme.get("border_color")
+        if focus_border is not None:
+            self.configure(border_color=focus_border)
+
+    def _on_dropdown_btn_press(self, event):
+        """Prevent FocusOut auto-hide when opening suggestions via button."""
+        self._ignore_focus_out_once = True
+        self.after(0, self.entry.focus_set)
+        return None
+    
+    def _toggle_dropdown(self):
+        """Toggle hiển thị dropdown với toàn bộ danh sách."""
+        # Clicking the button can trigger Entry FocusOut; suppress the auto-hide once.
+        self._ignore_focus_out_once = True
+        if self._listbox_visible:
+            self._hide_listbox()
+        else:
+            self._show_all_suggestions()
+    
+    def _show_all_suggestions(self):
+        """Hiển thị toàn bộ danh sách suggestions (khi click nút dropdown)."""
+        # Refresh suggestions if using function
+        if self._suggestions_func:
+            self._suggestions = self._suggestions_func()
+        
+        if self._suggestions:
+            self._show_listbox(self._suggestions, show_all=True)
+            self.entry.focus_set()
+        
+    def _create_listbox(self):
+        """Tạo popup listbox nếu chưa có."""
+        if self._popup is None:
+            def _pick_color(value, fallback):
+                if value is None:
+                    return fallback
+                if isinstance(value, (list, tuple)):
+                    return value[1] if ctk.get_appearance_mode() == "Dark" else value[0]
+                return value
+
+            frame_theme = ctk.ThemeManager.theme.get("CTkFrame", {})
+            label_theme = ctk.ThemeManager.theme.get("CTkLabel", {})
+            button_theme = ctk.ThemeManager.theme.get("CTkButton", {})
+
+            bg = _pick_color(frame_theme.get("fg_color"), "#ffffff")
+            fg = _pick_color(label_theme.get("text_color"), "#000000")
+            selected_bg = _pick_color(button_theme.get("fg_color"), "#1f538d")
+
+            self._popup = Toplevel(self)
+            self._popup.withdraw()
+            self._popup.overrideredirect(True)
+            self._popup.attributes("-topmost", True)
+            
+            # Frame chứa listbox và scrollbar
+            self._listbox_frame = ctk.CTkFrame(self._popup, fg_color=bg)
+            self._listbox_frame.pack(fill="both", expand=True)
+            
+            self._listbox = Listbox(
+                self._listbox_frame,
+                font=("Arial", 11),
+                selectmode="single",
+                activestyle="dotbox",
+                exportselection=False,
+                bg=bg,
+                fg=fg,
+                selectbackground=selected_bg,
+                selectforeground=fg,
+                highlightthickness=0,
+                borderwidth=1,
+                relief="solid"
+            )
+            self._listbox.pack(side="left", fill="both", expand=True)
+            
+            # Scrollbar
+            self._scrollbar = ctk.CTkScrollbar(self._listbox_frame, command=self._listbox.yview)
+            self._listbox.configure(yscrollcommand=self._scrollbar.set)
+            
+            # Bind listbox events
+            self._listbox.bind("<ButtonRelease-1>", self._on_listbox_click)
+            self._listbox.bind("<Double-Button-1>", self._on_listbox_double_click)
+    
+    def _show_listbox(self, suggestions, show_all=False):
+        """Hiển thị listbox với danh sách gợi ý."""
+        if not suggestions:
+            self._hide_listbox()
+            return
+            
+        self._create_listbox()
+        
+        # Clear and populate listbox
+        self._listbox.delete(0, END)
+        
+        # Khi show_all, hiển thị nhiều hơn
+        max_items = 15 if show_all else self._max_suggestions
+        for item in suggestions[:max_items]:
+            self._listbox.insert(END, item)
+        
+        # Show scrollbar if needed
+        if len(suggestions) > max_items:
+            self._scrollbar.pack(side="right", fill="y")
+        else:
+            self._scrollbar.pack_forget()
+        
+        # Calculate position
+        x = self.entry.winfo_rootx()
+        y = self.entry.winfo_rooty() + self.entry.winfo_height()
+        # Width includes dropdown button if present
+        width = self.winfo_width()
+        
+        # Calculate height based on items
+        num_items = min(len(suggestions), max_items)
+        height = num_items * 22 + 6  # ~22px per item + padding
+        
+        self._popup.geometry(f"{width}x{height}+{x}+{y}")
+        self._popup.deiconify()
+        self._listbox_visible = True
+        
+        # Select first item
+        if num_items > 0:
+            self._listbox.selection_set(0)
+    
+    def _hide_listbox(self, event=None):
+        """Ẩn listbox."""
+        if self._popup:
+            self._popup.withdraw()
+        self._listbox_visible = False
+        return "break" if event and event.keysym == "Escape" else None
+    
+    def _get_filtered_suggestions(self, text):
+        """Lọc danh sách gợi ý theo text nhập vào."""
+        if not text:
+            return []
+        
+        # Refresh suggestions if using function
+        if self._suggestions_func:
+            self._suggestions = self._suggestions_func()
+        
+        text_upper = text.upper()
+        # Ưu tiên gợi ý bắt đầu bằng text, sau đó là chứa text
+        starts_with = []
+        contains = []
+        
+        for suggestion in self._suggestions:
+            suggestion_upper = suggestion.upper()
+            if suggestion_upper.startswith(text_upper):
+                starts_with.append(suggestion)
+            elif text_upper in suggestion_upper:
+                contains.append(suggestion)
+        
+        return starts_with + contains
+    
+    def _on_key_release(self, event):
+        """Xử lý khi người dùng nhập."""
+        # Ignore special keys
+        if event.keysym in ('Up', 'Down', 'Left', 'Right', 'Return', 'Escape', 'Tab', 'Shift_L', 'Shift_R', 'Control_L', 'Control_R'):
+            return
+        
+        text = self.entry.get()
+        if len(text) >= 1:  # Bắt đầu gợi ý từ 1 ký tự
+            suggestions = self._get_filtered_suggestions(text)
+            self._show_listbox(suggestions)
+        else:
+            self._hide_listbox()
+    
+    def _on_focus_out(self, event):
+        """Xử lý khi mất focus."""
+        if self._ignore_focus_out_once:
+            self._ignore_focus_out_once = False
+            return
+        # Reset border color to theme default
+        entry_theme = ctk.ThemeManager.theme.get("CTkEntry", {})
+        default_border = entry_theme.get("border_color")
+        if default_border is not None:
+            self.configure(border_color=default_border)
+        # Delay để cho phép click vào listbox
+        self.after(200, self._check_focus)
+    
+    def _check_focus(self):
+        """Kiểm tra focus sau delay."""
+        try:
+            focused = self.focus_get()
+            if focused != self._listbox and focused != self.entry:
+                self._hide_listbox()
+        except:
+            self._hide_listbox()
+    
+    def _on_arrow_down(self, event):
+        """Xử lý phím mũi tên xuống."""
+        if not self._listbox_visible:
+            text = self.entry.get()
+            if text:
+                suggestions = self._get_filtered_suggestions(text)
+                self._show_listbox(suggestions)
+            return
+        
+        if self._listbox:
+            current = self._listbox.curselection()
+            if current:
+                idx = current[0]
+                if idx < self._listbox.size() - 1:
+                    self._listbox.selection_clear(0, END)
+                    self._listbox.selection_set(idx + 1)
+                    self._listbox.see(idx + 1)
+            else:
+                self._listbox.selection_set(0)
+        return "break"
+    
+    def _on_arrow_up(self, event):
+        """Xử lý phím mũi tên lên."""
+        if not self._listbox_visible:
+            return
+        
+        if self._listbox:
+            current = self._listbox.curselection()
+            if current:
+                idx = current[0]
+                if idx > 0:
+                    self._listbox.selection_clear(0, END)
+                    self._listbox.selection_set(idx - 1)
+                    self._listbox.see(idx - 1)
+        return "break"
+    
+    def _on_enter(self, event):
+        """Xử lý phím Enter."""
+        if self._listbox_visible and self._listbox:
+            current = self._listbox.curselection()
+            if current:
+                self._select_item(current[0])
+                return "break"
+    
+    def _on_tab(self, event):
+        """Xử lý phím Tab - chọn gợi ý đầu tiên nếu có."""
+        if self._listbox_visible and self._listbox and self._listbox.size() > 0:
+            self._select_item(0)
+    
+    def _on_listbox_click(self, event):
+        """Xử lý click vào listbox."""
+        selection = self._listbox.curselection()
+        if selection:
+            self._select_item(selection[0])
+    
+    def _on_listbox_double_click(self, event):
+        """Xử lý double click vào listbox."""
+        self._on_listbox_click(event)
+    
+    def _select_item(self, index):
+        """Chọn item từ listbox."""
+        if self._listbox and index < self._listbox.size():
+            value = self._listbox.get(index)
+            self.entry.delete(0, END)
+            self.entry.insert(0, value)
+            self._hide_listbox()
+            self.entry.focus_set()
+            # Trigger event for external handlers
+            self.event_generate("<<AutocompleteSelected>>")
+    
+    # === Public methods to mimic CTkEntry interface ===
+    def get(self):
+        """Lấy giá trị từ entry."""
+        return self.entry.get()
+    
+    def set(self, value):
+        """Set giá trị cho entry."""
+        self.entry.delete(0, END)
+        self.entry.insert(0, value)
+    
+    def delete(self, first, last=None):
+        """Xóa text từ entry."""
+        self.entry.delete(first, last)
+    
+    def insert(self, index, string):
+        """Insert text vào entry."""
+        self.entry.insert(index, string)
+    
+    def configure(self, **kwargs):
+        """Configure entry."""
+        if 'suggestions' in kwargs:
+            suggestions = kwargs.pop('suggestions')
+            if callable(suggestions):
+                self._suggestions_func = suggestions
+                self._suggestions = []
+            else:
+                self._suggestions = suggestions
+                self._suggestions_func = None
+        if kwargs:
+            self.entry.configure(**kwargs)
+    
+    def bind(self, sequence, func, add=None):
+        """Bind event to entry."""
+        # CTkEntry requires add to be '+' or True, not None
+        if add is None:
+            return self.entry.bind(sequence, func)
+        return self.entry.bind(sequence, func, add)
+    
+    def focus(self):
+        """Set focus to entry."""
+        self.entry.focus()
+    
+    def focus_set(self):
+        """Set focus to entry."""
+        self.entry.focus_set()
+    
+    def update_suggestions(self, suggestions):
+        """Cập nhật danh sách gợi ý."""
+        if callable(suggestions):
+            self._suggestions_func = suggestions
+            self._suggestions = []
+        else:
+            self._suggestions = suggestions
+            self._suggestions_func = None
+# === END PHASE 2.5 ===
+
 
 def add_right_click_menu(app, widget):
     """Thêm một menu chuột phải (Cắt, Sao chép, Dán) vào một widget."""
@@ -206,6 +669,7 @@ class LocationSwapDialog(ctk.CTkToplevel):
         
         self.location_combo = ctk.CTkComboBox(swap_frame, values=[], font=self.app.font_normal)
         self.location_combo.pack(fill="x", pady=(5,0))
+        harmonize_combobox_style(self.location_combo)
         add_right_click_menu(self.app, self.location_combo)
 
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -241,3 +705,76 @@ class LocationSwapDialog(ctk.CTkToplevel):
             self.destroy()
         else:
             messagebox.showerror("Lỗi", result["message"], parent=self)
+
+
+# === PHASE 2.3: Batch Operations Dialog ===
+class BatchLocationDialog(ctk.CTkToplevel):
+    """Hộp thoại để gán vị trí cho nhiều xe cùng lúc."""
+    def __init__(self, parent, vins, location_manager):
+        super().__init__(parent)
+        self.transient(parent)
+        self.app = parent
+        self.location_manager = location_manager
+        
+        self.vins = vins
+        self.result = None
+
+        self.title(self.app.get_translation("batch_assign_location"))
+        self.geometry("500x300")
+
+        info_frame = ctk.CTkFrame(self, fg_color="transparent")
+        info_frame.pack(pady=10, padx=20, fill="x")
+        
+        count_text = self.app.get_translation("batch_selected_count").format(count=len(vins))
+        ctk.CTkLabel(info_frame, text=count_text, font=self.app.font_bold).pack(anchor="w")
+        
+        # Show list of VINs (scrollable)
+        vin_frame = ctk.CTkFrame(info_frame)
+        vin_frame.pack(fill="x", pady=(5, 0))
+        
+        vin_text = "\n".join(vins[:10])  # Show first 10
+        if len(vins) > 10:
+            vin_text += f"\n... (+{len(vins) - 10} {self.app.get_translation('batch_more_vehicles')})"
+        
+        ctk.CTkLabel(vin_frame, text=vin_text, font=self.app.font_normal, justify="left").pack(anchor="w", padx=5, pady=5)
+
+        location_frame = ctk.CTkFrame(self, fg_color="transparent")
+        location_frame.pack(pady=10, padx=20, fill="x")
+
+        ctk.CTkLabel(location_frame, text=self.app.get_translation("lbl_new_location"), font=self.app.font_normal).pack(anchor="w")
+        
+        self.location_combo = ctk.CTkComboBox(location_frame, values=[], font=self.app.font_normal, width=400)
+        self.location_combo.pack(fill="x", pady=(5,0))
+        harmonize_combobox_style(self.location_combo)
+        add_right_click_menu(self.app, self.location_combo)
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=20, padx=20, fill="x")
+
+        ctk.CTkButton(btn_frame, text=self.app.get_translation("btn_confirm"), command=self.on_confirm, font=self.app.font_normal).pack(side="left", expand=True, padx=5)
+        ctk.CTkButton(btn_frame, text=self.app.get_translation("btn_cancel"), command=self.destroy, font=self.app.font_normal).pack(side="right", expand=True, padx=5)
+
+        self._load_free_locations()
+        self.grab_set()
+        self.wait_window()
+
+    def _load_free_locations(self):
+        free_locations = self.location_manager.get_all_free_locations()
+        self.location_map = {loc['full_location_name']: loc['id'] for loc in free_locations}
+        self.location_combo.configure(values=list(self.location_map.keys()))
+        if self.location_map:
+            self.location_combo.set(list(self.location_map.keys())[0])
+
+    def on_confirm(self):
+        selected_location_name = self.location_combo.get()
+        if not selected_location_name:
+            messagebox.showwarning(
+                self.app.get_translation("warn_missing_info"),
+                self.app.get_translation("warn_select_location"),
+                parent=self
+            )
+            return
+            
+        self.result = self.location_map.get(selected_location_name)
+        self.destroy()
+# === END PHASE 2.3 ===

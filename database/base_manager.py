@@ -2,6 +2,7 @@
 import sqlite3
 import logging
 import re
+import threading
 
 # Import config để lấy DB_FILE mặc định
 # Nhưng cho phép override qua constructor parameter
@@ -26,15 +27,16 @@ class BaseManager:
     thiết lập toàn bộ schema (cấu trúc) của CSDL.
     
     Hỗ trợ:
-    - Singleton pattern cho production (dùng config.DB_FILE)
+    - Thread-safe singleton pattern cho production (dùng config.DB_FILE)
     - Override db_path cho testing
     """
     _conn = None
     _db_path = None  # Track current DB path
+    _lock = threading.Lock()  # Thread safety for singleton creation
 
     def __init__(self, db_path: str = None):
         """
-        Khởi tạo BaseManager.
+        Khởi tạo BaseManager với thread-safe singleton pattern.
         
         Args:
             db_path: Đường dẫn tới database file. Nếu None, sử dụng config.DB_FILE.
@@ -43,28 +45,36 @@ class BaseManager:
         # Xác định db_path sẽ sử dụng
         target_db = db_path if db_path is not None else config.DB_FILE
         
-        # Nếu đã có connection và cùng db_path, reuse
+        # Double-check locking: First check without lock (fast path)
         if BaseManager._conn is not None and BaseManager._db_path == target_db:
             self.conn = BaseManager._conn
             return
         
-        # Đóng connection cũ nếu có (chuyển sang DB khác)
-        if BaseManager._conn is not None:
-            try:
-                BaseManager._conn.close()
-            except Exception:
-                pass
-            BaseManager._conn = None
-        
-        # Tạo connection mới
-        logger.info(f"Đang tạo kết nối mới tới database: {target_db}")
-        BaseManager._conn = sqlite3.connect(target_db, check_same_thread=False)
-        BaseManager._conn.row_factory = sqlite3.Row
-        BaseManager._db_path = target_db
-        
-        self.conn = BaseManager._conn
-        
-        self._setup_schema()
+        # Acquire lock for thread-safe singleton creation
+        with BaseManager._lock:
+            # Double-check: Another thread might have created connection while waiting
+            if BaseManager._conn is not None and BaseManager._db_path == target_db:
+                self.conn = BaseManager._conn
+                return
+            
+            # Đóng connection cũ nếu có (chuyển sang DB khác)
+            if BaseManager._conn is not None:
+                try:
+                    BaseManager._conn.close()
+                    logger.info(f"Closed previous connection to: {BaseManager._db_path}")
+                except Exception as e:
+                    logger.warning(f"Error closing previous connection: {e}")
+                BaseManager._conn = None
+            
+            # Tạo connection mới (thread-safe)
+            logger.info(f"Đang tạo kết nối mới tới database: {target_db}")
+            BaseManager._conn = sqlite3.connect(target_db, check_same_thread=False)
+            BaseManager._conn.row_factory = sqlite3.Row
+            BaseManager._db_path = target_db
+            
+            self.conn = BaseManager._conn
+            
+            self._setup_schema()
 
     def _setup_schema(self):
         """
@@ -268,6 +278,12 @@ class BaseManager:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_vin ON vehicles (vin)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_owner ON vehicles (owner)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles (status)")
+            
+            # PERFORMANCE FIX Issue #9: Critical indexes for frequently queried columns
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_date_out ON vehicles (date_out)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_date_in ON vehicles (date_in)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_status_active ON vehicles (status, is_active)")
+            
             # Phase 1B: Index for soft delete queries
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_is_deleted ON vehicles (is_deleted)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_deleted_at ON vehicles (deleted_at) WHERE deleted_at IS NOT NULL")
@@ -287,6 +303,18 @@ class BaseManager:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users (is_active)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history (user_id)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_login_history_created ON login_history (created_at)")
+            
+            # PERFORMANCE FIX Issue #9: Audit log indexes for fast querying
+            # Check if audit_logs table exists before creating indexes
+            cursor = self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'"
+            )
+            if cursor.fetchone():
+                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs (created_at)")
+                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action_time ON audit_logs (action, created_at)")
+                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_table_record ON audit_logs (table_name, record_id)")
+            
+            logger.info("All performance indexes created successfully")
 
     def begin_transaction(self):
         """Bắt đầu một giao dịch CSDL."""
@@ -310,6 +338,42 @@ class BaseManager:
         except sqlite3.Error as e:
             logger.error(f"Không thể tạo kết nối đến file CSDL: {db_file_path}. Lỗi: {e}")
             return None
+
+    def get_table_indexes(self, table_name: str):
+        """
+        Get list of indexes for a table.
+        
+        Args:
+            table_name: Name of the table
+        
+        Returns:
+            List of dictionaries with index information (name, unique, columns)
+        """
+        try:
+            cursor = self.conn.execute(f"PRAGMA index_list('{table_name}')")
+            indexes = []
+            
+            for row in cursor.fetchall():
+                # PRAGMA index_list returns: (seq, name, unique, origin, partial, ...)
+                index_name = row[1]
+                is_unique = row[2]
+                
+                index_info = {
+                    'name': index_name,
+                    'unique': is_unique,
+                }
+                
+                # Get column names for this index
+                col_cursor = self.conn.execute(f"PRAGMA index_info('{index_name}')")
+                columns = [col[2] for col in col_cursor.fetchall()]
+                index_info['columns'] = columns
+                
+                indexes.append(index_info)
+            
+            return indexes
+        except Exception as e:
+            logger.error(f"Error getting indexes for table {table_name}: {e}")
+            return []
 
     @staticmethod
     def close_connection():

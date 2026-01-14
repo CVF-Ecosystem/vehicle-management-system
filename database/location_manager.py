@@ -46,6 +46,19 @@ class LocationManager(BaseManager):
             logger.error(f"Lỗi khi thêm hàng loạt vị trí: {e}")
             return False, 0, 0
 
+    def get_statistics(self):
+        """Trả về thống kê tổng số vị trí và số vị trí đã chiếm trong bãi."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM locations")
+            total = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM locations WHERE is_occupied = 1")
+            occupied = cur.fetchone()[0]
+            return {"total": total, "occupied": occupied}
+        except Exception as e:
+            logger.error(f"Lỗi khi lấy thống kê vị trí: {e}")
+            return {"total": 0, "occupied": 0}
+
     def get_all_free_locations(self):
         """Lấy danh sách tất cả các vị trí còn trống, sắp xếp theo thứ tự logic."""
         try:
@@ -93,3 +106,13 @@ class LocationManager(BaseManager):
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi tìm vị trí theo tên '{full_name}': {e}")
             return None
+
+    def get_all_blocks(self):
+        """Lấy danh sách tất cả các block có trong bãi."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT DISTINCT block FROM locations ORDER BY block")
+            return [row['block'] for row in cur.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy danh sách blocks: {e}")
+            return []

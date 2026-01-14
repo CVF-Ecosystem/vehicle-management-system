@@ -72,12 +72,28 @@ def infer_and_convert_dates(date_series, default_format="DD/MM/YYYY"):
     return parsed
 
 
-def import_vehicles_from_excel(path, vehicle_manager, location_manager, normalize_owner_func):
+def import_vehicles_from_excel(path, vehicle_manager, location_manager, normalize_owner_func, progress_callback=None):
     """
     Import hàng loạt xe từ file Excel với khả năng nhận diện cột linh hoạt
     và kiểm tra trùng lặp dữ liệu ngay trong file.
+    
+    Args:
+        path: Đường dẫn file Excel
+        vehicle_manager: Quản lý xe
+        location_manager: Quản lý vị trí
+        normalize_owner_func: Hàm chuẩn hóa tên chủ hàng
+        progress_callback: Callback function(current, total, message) để cập nhật tiến độ
     """
+    def report_progress(current, total, message=""):
+        """Helper to safely call progress callback."""
+        if progress_callback:
+            try:
+                progress_callback(current, total, message)
+            except Exception:
+                pass
+    
     try:
+        report_progress(0, 100, "Đang đọc file Excel...")
         df = pd.read_excel(path, dtype=str, keep_default_na=False)
         
         expected_cols = {
@@ -117,15 +133,38 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
 
     except Exception as e:
         logging.error(f"Lỗi đọc hoặc xử lý file Excel: {e}")
+
+        try:
+            from database.audit_repository import log_audit, AuditAction
+
+            log_audit(
+                action=AuditAction.IMPORT,
+                details={
+                    "source": "excel_importer.import_vehicles_from_excel",
+                    "file": path,
+                    "success": 0,
+                    "errors": 0,
+                    "total": 0,
+                    "fatal_error": str(e),
+                    "phase": "read_or_parse",
+                },
+            )
+        except Exception:
+            pass
         return {"success": 0, "errors": 0, "total": 0, "error_details": [str(e)], "imported_data": []}
 
     total = len(df)
     result = {"success": 0, "errors": 0, "total": total, "error_details": [], "imported_data": []}
     
+    report_progress(0, total, f"Đang xử lý 0/{total} xe...")
+    
     # === LOGIC MỚI: Bỏ qua lỗi và tiếp tục ===
     vehicle_manager.begin_transaction()
     try:
         for i, row in df.iterrows():
+            # Update progress for each row
+            report_progress(i, total, f"Đang xử lý {i}/{total} xe...")
+            
             vin = row["vin"]
             owner = normalize_owner_func(str(row.get("owner", "")))
             
@@ -160,6 +199,7 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
         
         # Sau khi lặp xong, commit tất cả các thay đổi thành công
         vehicle_manager.commit_transaction()
+        report_progress(total, total, f"Hoàn tất! {result['success']}/{total} xe")
 
     except Exception as e:
         # Lỗi này chỉ xảy ra nếu có vấn đề nghiêm trọng (ví dụ: CSDL bị khóa)
@@ -170,5 +210,22 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
         result["error_details"] = [f"Đã xảy ra lỗi nghiêm trọng: {e}. Toàn bộ quá trình import đã được hủy bỏ."]
         result["imported_data"] = []
         logging.exception("Lỗi nghiêm trọng trong quá trình import Excel.")
+
+    # Audit import summary (best-effort)
+    try:
+        from database.audit_repository import log_audit, AuditAction
+
+        log_audit(
+            action=AuditAction.IMPORT,
+            details={
+                "source": "excel_importer.import_vehicles_from_excel",
+                "file": path,
+                "total": result.get("total"),
+                "success": result.get("success"),
+                "errors": result.get("errors"),
+            },
+        )
+    except Exception:
+        pass
 
     return result

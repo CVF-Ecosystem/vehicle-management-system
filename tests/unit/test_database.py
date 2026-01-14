@@ -372,3 +372,133 @@ class TestLocationManager:
         # Verify released
         available_after = manager.get_all_free_locations()
         assert len(available_after) == len(available_before), "Should be back to original count"
+
+
+class TestAdvancedSearch:
+    """Test suite for Advanced Search (Phase 2.1)."""
+    
+    @pytest.fixture(autouse=True)
+    def setup_search_db(self, force_test_db):
+        """Setup database with sample data for search tests."""
+        from database.vehicle_manager import VehicleManager
+        from database.location_manager import LocationManager
+        from datetime import datetime, timedelta
+        
+        self.vm = VehicleManager()
+        self.lm = LocationManager()
+        
+        # Add locations
+        locations_to_add = [
+            {'block': 'A', 'row': '01', 'slot': 1},
+            {'block': 'A', 'row': '01', 'slot': 2},
+            {'block': 'B', 'row': '01', 'slot': 1},
+        ]
+        self.lm.add_locations_batch(locations_to_add)
+        
+        # Use yesterday to avoid future date validation error
+        now = datetime.now() - timedelta(days=1)
+        
+        # Vehicle 1: In stock, Block A
+        self.vm.add_vehicle(
+            vin="SEARCH001", 
+            owner="TOYOTA", 
+            vehicle_type="SEDAN",
+            date_in=now,
+            location_id=1
+        )
+        
+        # Vehicle 2: In stock, Block B
+        self.vm.add_vehicle(
+            vin="SEARCH002", 
+            owner="HONDA",
+            vehicle_type="SUV",
+            date_in=now,
+            location_id=3
+        )
+        
+        # Vehicle 3: Shipped
+        self.vm.add_vehicle(
+            vin="SEARCH003",
+            owner="TOYOTA",
+            vehicle_type="TRUCK",
+            date_in=now,
+            location_id=2
+        )
+        # Use update_to_out to mark as shipped
+        self.vm.update_to_out(
+            vin="SEARCH003",
+            date_out=now,
+            transport_vehicle="51C-12345",
+            driver_name="TEST DRIVER"
+        )
+    
+    @pytest.mark.db
+    def test_search_by_status_in_stock(self):
+        """Search với status_filter='in_stock' chỉ trả về xe còn tồn."""
+        results = self.vm.search_all_vehicles(status_filter="in_stock")
+        
+        # Should find SEARCH001 and SEARCH002, not SEARCH003 (shipped)
+        vins = [r['vin'] for r in results]
+        assert "SEARCH001" in vins
+        assert "SEARCH002" in vins
+        assert "SEARCH003" not in vins
+    
+    @pytest.mark.db
+    def test_search_by_status_shipped(self):
+        """Search với status_filter='shipped' chỉ trả về xe đã xuất."""
+        results = self.vm.search_all_vehicles(status_filter="shipped")
+        
+        vins = [r['vin'] for r in results]
+        assert "SEARCH003" in vins
+        assert "SEARCH001" not in vins
+        assert "SEARCH002" not in vins
+    
+    @pytest.mark.db
+    def test_search_by_block(self):
+        """Search với block filter chỉ trả về xe ở block đó."""
+        results = self.vm.search_all_vehicles(block="A")
+        
+        vins = [r['vin'] for r in results]
+        # SEARCH001 in Block A, SEARCH002 in Block B, SEARCH003 shipped (no location)
+        assert "SEARCH001" in vins
+        assert "SEARCH002" not in vins
+    
+    @pytest.mark.db
+    def test_search_combined_filters(self):
+        """Search với nhiều filters kết hợp."""
+        results = self.vm.search_all_vehicles(
+            owner="TOYOTA",
+            status_filter="in_stock"
+        )
+        
+        vins = [r['vin'] for r in results]
+        # Only SEARCH001 is TOYOTA + in_stock
+        assert "SEARCH001" in vins
+        assert "SEARCH003" not in vins  # TOYOTA but shipped
+    
+    @pytest.mark.db
+    def test_search_by_date_range(self):
+        """Search với date range filter."""
+        from datetime import datetime, timedelta
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        # Search từ hôm qua đến hôm nay
+        results = self.vm.search_all_vehicles(
+            date_from=yesterday,
+            date_to=today,
+            date_field="date_in"
+        )
+        
+        # Should find all vehicles added today
+        assert len(results) >= 2
+    
+    @pytest.mark.db
+    def test_get_all_blocks(self):
+        """LocationManager.get_all_blocks() trả về danh sách blocks."""
+        blocks = self.lm.get_all_blocks()
+        
+        assert "A" in blocks
+        assert "B" in blocks
+        assert len(blocks) >= 2

@@ -15,6 +15,7 @@ from tkinter import ttk
 import logging
 from datetime import datetime
 from typing import Optional, List, Callable
+from translations import get_translation
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +46,14 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
             on_restore_callback: Callback được gọi sau khi restore thành công
         """
         super().__init__(parent)
-        
         self.transient(parent)
         self.parent = parent
         self.vehicle_manager = vehicle_manager
         self.on_restore_callback = on_restore_callback
-        
+        # Ngôn ngữ hiện tại
+        self.lang = getattr(parent, 'current_lang', None).get() if hasattr(parent, 'current_lang') else 'vi'
         # Window config
-        self.title("Quản lý xe đã xóa")
+        self.title(get_translation("dialog_deleted_vehicles_title", self.lang))
         self.geometry("1100x650")
         self.minsize(900, 550)
         
@@ -91,29 +92,23 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
     
     def _setup_ui(self):
         """Thiết lập giao diện."""
-        # Main container
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
         # Tabview
         self.tabview = ctk.CTkTabview(main_frame)
         self.tabview.pack(fill="both", expand=True)
-        
         # Tab 1: Soft deleted (recoverable)
-        self.tab_deleted = self.tabview.add("🗑️ Xe đã xóa (có thể khôi phục)")
+        self.tab_deleted = self.tabview.add(get_translation("tab_deleted_vehicles", self.lang))
         self._setup_deleted_tab()
-        
         # Tab 2: Hard deleted (permanent archive)
-        self.tab_archived = self.tabview.add("📦 Lưu trữ vĩnh viễn")
+        self.tab_archived = self.tabview.add(get_translation("tab_archived_vehicles", self.lang))
         self._setup_archived_tab()
-        
         # Bottom buttons
         bottom_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         bottom_frame.pack(fill="x", pady=(10, 0))
-        
         ctk.CTkButton(
             bottom_frame,
-            text="Đóng",
+            text=get_translation("btn_close", self.lang),
             command=self.destroy,
             font=self.font_normal,
             width=100
@@ -127,13 +122,12 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         ctk.CTkLabel(
             search_frame, 
-            text="🔍 Tìm kiếm:",
+            text="🔍 " + get_translation("lbl_search", self.lang) + ":",
             font=self.font_normal
         ).pack(side="left", padx=(0, 5))
-        
         self.search_entry = ctk.CTkEntry(
             search_frame,
-            placeholder_text="VIN, chủ hàng, loại xe...",
+            placeholder_text=get_translation("search_deleted_placeholder", self.lang),
             width=250,
             font=self.font_normal
         )
@@ -142,7 +136,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         ctk.CTkButton(
             search_frame,
-            text="Tìm",
+            text=get_translation("btn_find", self.lang),
             command=self._search_deleted,
             font=self.font_normal,
             width=80
@@ -151,7 +145,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         # Stats label
         self.stats_label = ctk.CTkLabel(
             search_frame,
-            text="Đang tải...",
+            text=get_translation("loading", self.lang),
             font=self.font_normal
         )
         self.stats_label.pack(side="left")
@@ -171,13 +165,13 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         )
         
         # Define headings
-        self.deleted_tree.heading("vin", text="VIN")
-        self.deleted_tree.heading("owner", text="Chủ hàng")
-        self.deleted_tree.heading("vehicle_type", text="Loại xe")
-        self.deleted_tree.heading("date_in", text="Ngày nhập")
-        self.deleted_tree.heading("deleted_at", text="Ngày xóa")
-        self.deleted_tree.heading("deleted_by", text="Người xóa")
-        self.deleted_tree.heading("reason", text="Lý do")
+        self.deleted_tree.heading("vin", text=get_translation("col_vin", self.lang))
+        self.deleted_tree.heading("owner", text=get_translation("col_owner", self.lang))
+        self.deleted_tree.heading("vehicle_type", text=get_translation("col_vehicle_type", self.lang))
+        self.deleted_tree.heading("date_in", text=get_translation("col_date_in", self.lang))
+        self.deleted_tree.heading("deleted_at", text=get_translation("col_date_deleted", self.lang))
+        self.deleted_tree.heading("deleted_by", text=get_translation("col_deleted_by", self.lang))
+        self.deleted_tree.heading("reason", text=get_translation("col_delete_reason", self.lang))
         
         # Column widths
         self.deleted_tree.column("vin", width=160, minwidth=120)
@@ -209,7 +203,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         self.restore_btn = ctk.CTkButton(
             action_frame,
-            text="♻️ Khôi phục xe đã chọn",
+            text="♻️ " + get_translation("btn_restore_selected", self.lang),
             command=self._restore_selected,
             font=self.font_bold,
             fg_color="#28a745",
@@ -221,7 +215,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         self.hard_delete_btn = ctk.CTkButton(
             action_frame,
-            text="🗑️ Xóa vĩnh viễn",
+            text="🗑️ " + get_translation("btn_delete_permanently", self.lang),
             command=self._hard_delete_selected,
             font=self.font_bold,
             fg_color="#dc3545",
@@ -233,7 +227,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         ctk.CTkButton(
             action_frame,
-            text="🔄 Làm mới",
+            text="🔄 " + get_translation("btn_refresh", self.lang),
             command=self._refresh_deleted,
             font=self.font_normal,
             width=100
@@ -245,7 +239,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         self.prev_btn_deleted = ctk.CTkButton(
             page_frame,
-            text="◀ Trang trước",
+            text="◀ " + get_translation("btn_prev_page", self.lang),
             command=self._prev_page_deleted,
             font=self.font_normal,
             width=100,
@@ -255,14 +249,14 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         self.page_label_deleted = ctk.CTkLabel(
             page_frame,
-            text="Trang 1",
+            text=get_translation("pagination_label", self.lang).format(current=1, total=1),
             font=self.font_normal
         )
         self.page_label_deleted.pack(side="left", padx=20)
         
         self.next_btn_deleted = ctk.CTkButton(
             page_frame,
-            text="Trang sau ▶",
+            text=get_translation("btn_next_page", self.lang) + " ▶",
             command=self._next_page_deleted,
             font=self.font_normal,
             width=100,
@@ -278,7 +272,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         ctk.CTkLabel(
             info_frame,
-            text="📋 Danh sách xe đã bị xóa vĩnh viễn (không thể khôi phục, chỉ lưu để tham khảo)",
+            text="📋 " + get_translation("tab_archived_vehicles", self.lang) + " (" + get_translation("btn_delete_permanently", self.lang) + ")",
             font=self.font_normal,
             text_color="gray"
         ).pack(side="left")
@@ -305,12 +299,12 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         )
         
         # Define headings
-        self.archived_tree.heading("vin", text="VIN")
-        self.archived_tree.heading("owner", text="Chủ hàng")
-        self.archived_tree.heading("vehicle_type", text="Loại xe")
-        self.archived_tree.heading("deleted_at", text="Ngày xóa vĩnh viễn")
-        self.archived_tree.heading("deleted_by", text="Người xóa")
-        self.archived_tree.heading("reason", text="Lý do")
+        self.archived_tree.heading("vin", text=get_translation("col_vin", self.lang))
+        self.archived_tree.heading("owner", text=get_translation("col_owner", self.lang))
+        self.archived_tree.heading("vehicle_type", text=get_translation("col_vehicle_type", self.lang))
+        self.archived_tree.heading("deleted_at", text=get_translation("col_date_deleted", self.lang))
+        self.archived_tree.heading("deleted_by", text=get_translation("col_deleted_by", self.lang))
+        self.archived_tree.heading("reason", text=get_translation("col_delete_reason", self.lang))
         
         # Column widths
         self.archived_tree.column("vin", width=160, minwidth=120)
@@ -335,42 +329,77 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         # Bottom controls
         bottom_frame = ctk.CTkFrame(self.tab_archived, fg_color="transparent")
         bottom_frame.pack(fill="x", pady=(10, 0))
-        
+        # Refresh button
         ctk.CTkButton(
             bottom_frame,
-            text="🔄 Làm mới",
+            text="🔄 " + get_translation("btn_refresh", self.lang),
             command=self._refresh_archived,
             font=self.font_normal,
             width=100
         ).pack(side="left")
-        
+        # Clear all button
+        ctk.CTkButton(
+            bottom_frame,
+            text="🧹 " + get_translation("btn_clear_all_archived", self.lang),
+            command=self._clear_all_archived,
+            font=self.font_normal,
+            fg_color="#dc3545",
+            hover_color="#c82333",
+            width=180
+        ).pack(side="left", padx=(10, 0))
         # Pagination
         self.prev_btn_archived = ctk.CTkButton(
             bottom_frame,
-            text="◀ Trang trước",
+            text="◀ " + get_translation("btn_prev_page", self.lang),
             command=self._prev_page_archived,
             font=self.font_normal,
             width=100,
             state="disabled"
         )
         self.prev_btn_archived.pack(side="left", padx=(20, 0))
-        
         self.page_label_archived = ctk.CTkLabel(
             bottom_frame,
-            text="Trang 1",
+            text=get_translation("pagination_label", self.lang).format(current=1, total=1),
             font=self.font_normal
         )
         self.page_label_archived.pack(side="left", padx=20)
-        
         self.next_btn_archived = ctk.CTkButton(
             bottom_frame,
-            text="Trang sau ▶",
+            text=get_translation("btn_next_page", self.lang) + " ▶",
             command=self._next_page_archived,
             font=self.font_normal,
             width=100,
             state="disabled"
         )
         self.next_btn_archived.pack(side="left")
+
+    def _clear_all_archived(self):
+        """Clear all permanently deleted vehicle logs."""
+        if self.total_archived == 0:
+            messagebox.showinfo(get_translation("info_title", self.lang), get_translation("no_archived_to_clear", self.lang), parent=self)
+            return
+        confirm = messagebox.askyesno(
+            get_translation("confirm_clear_all_archived_title", self.lang),
+            get_translation("confirm_clear_all_archived_msg", self.lang).format(total=self.total_archived),
+            parent=self
+        )
+        if not confirm:
+            return
+        try:
+            self.vehicle_manager.clear_archived_deleted_vehicles()
+            messagebox.showinfo(
+                get_translation("success_title", self.lang),
+                get_translation("clear_all_archived_success", self.lang),
+                parent=self
+            )
+            self._refresh_archived()
+        except Exception as e:
+            logger.error(f"Error clearing archived vehicles: {e}")
+            messagebox.showerror(
+                get_translation("error_title", self.lang),
+                get_translation("clear_all_archived_error", self.lang).format(e=e),
+                parent=self
+            )
     
     # ========== Data Loading ==========
     
@@ -489,13 +518,13 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
     def _update_deleted_stats(self):
         """Update stats label cho tab deleted."""
         self.stats_label.configure(
-            text=f"📊 Tổng: {self.total_deleted} xe đã xóa"
+            text=get_translation("deleted_stats_label", self.lang).format(total=self.total_deleted)
         )
     
     def _update_archived_stats(self):
         """Update stats label cho tab archived."""
         self.archived_stats_label.configure(
-            text=f"📊 Tổng: {self.total_archived} bản ghi"
+            text=get_translation("archived_stats_label", self.lang).format(total=self.total_archived)
         )
     
     def _update_deleted_pagination(self):
@@ -503,7 +532,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         total_pages = max(1, (self.total_deleted + self.page_size - 1) // self.page_size)
         current = self.current_page_deleted + 1
         
-        self.page_label_deleted.configure(text=f"Trang {current}/{total_pages}")
+        self.page_label_deleted.configure(text=get_translation("pagination_label", self.lang).format(current=current, total=total_pages))
         
         # Enable/disable buttons
         self.prev_btn_deleted.configure(
@@ -518,7 +547,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         total_pages = max(1, (self.total_archived + self.page_size - 1) // self.page_size)
         current = self.current_page_archived + 1
         
-        self.page_label_archived.configure(text=f"Trang {current}/{total_pages}")
+        self.page_label_archived.configure(text=get_translation("pagination_label", self.lang).format(current=current, total=total_pages))
         
         # Enable/disable buttons
         self.prev_btn_archived.configure(
@@ -599,7 +628,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
     def _restore_selected(self):
         """Restore selected deleted vehicle."""
         if not self.selected_deleted:
-            messagebox.showwarning("Cảnh báo", "Vui lòng chọn xe cần khôi phục!", parent=self)
+            messagebox.showwarning(get_translation("warning_title", self.lang), get_translation("select_vehicle_restore_warning", self.lang), parent=self)
             return
         
         vin = self.selected_deleted.get("vin")
@@ -607,11 +636,8 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
         
         # Confirm
         confirm = messagebox.askyesno(
-            "Xác nhận khôi phục",
-            f"Bạn có chắc muốn khôi phục xe này?\n\n"
-            f"VIN: {vin}\n"
-            f"Chủ hàng: {owner}\n\n"
-            f"Xe sẽ được đưa trở lại danh sách trong kho.",
+            get_translation("confirm_restore_title", self.lang),
+            get_translation("confirm_restore_msg", self.lang).format(vin=vin, owner=owner),
             parent=self
         )
         
@@ -631,8 +657,8 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
             
             if result["success"]:
                 messagebox.showinfo(
-                    "Thành công",
-                    f"Đã khôi phục xe {vin} thành công!",
+                    get_translation("success_title", self.lang),
+                    get_translation("restore_success_msg", self.lang).format(vin=vin),
                     parent=self
                 )
                 
@@ -649,19 +675,19 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
                     self.on_restore_callback()
             else:
                 messagebox.showerror(
-                    "Lỗi",
-                    f"Không thể khôi phục xe:\n{result.get('message', 'Unknown error')}",
+                    get_translation("error_title", self.lang),
+                    get_translation("restore_error_msg", self.lang).format(msg=result.get('message', 'Unknown error')),
                     parent=self
                 )
                 
         except Exception as e:
             logger.error(f"Error restoring vehicle {vin}: {e}")
-            messagebox.showerror("Lỗi", f"Lỗi khi khôi phục xe:\n{e}", parent=self)
+            messagebox.showerror(get_translation("error_title", self.lang), get_translation("restore_exception_msg", self.lang).format(e=e), parent=self)
     
     def _hard_delete_selected(self):
         """Permanently delete selected vehicle."""
         if not self.selected_deleted:
-            messagebox.showwarning("Cảnh báo", "Vui lòng chọn xe cần xóa vĩnh viễn!", parent=self)
+            messagebox.showwarning(get_translation("warning_title", self.lang), get_translation("select_vehicle_hard_delete_warning", self.lang), parent=self)
             return
         
         vin = self.selected_deleted.get("vin")
@@ -721,79 +747,68 @@ class HardDeleteReasonDialog(ctk.CTkToplevel):
     
     def __init__(self, parent, vin: str, owner: str):
         super().__init__(parent)
-        
         self.transient(parent)
-        self.title("Xác nhận xóa vĩnh viễn")
-        self.geometry("450x280")
+        # Language
+        self.lang = getattr(parent, 'lang', 'vi') if hasattr(parent, 'lang') else 'vi'
+        self.title(get_translation("hard_delete_dialog_title", self.lang))
+        self.geometry("540x320")
         self.resizable(False, False)
-        
         self.result = None
-        
         # Warning frame
         warning_frame = ctk.CTkFrame(self, fg_color="#fff3cd")
         warning_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
         ctk.CTkLabel(
             warning_frame,
-            text="⚠️ CẢNH BÁO: Hành động này không thể hoàn tác!",
+            text=get_translation("hard_delete_warning", self.lang),
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#856404"
         ).pack(pady=10)
-        
         # Info
         info_frame = ctk.CTkFrame(self, fg_color="transparent")
         info_frame.pack(fill="x", padx=20, pady=10)
-        
         ctk.CTkLabel(
             info_frame,
             text=f"VIN: {vin}",
             font=ctk.CTkFont(size=13)
         ).pack(anchor="w")
-        
         ctk.CTkLabel(
             info_frame,
-            text=f"Chủ hàng: {owner}",
+            text=get_translation("label_owner", self.lang) + f" {owner}",
             font=ctk.CTkFont(size=13)
         ).pack(anchor="w")
-        
         # Reason input
         ctk.CTkLabel(
             self,
-            text="Lý do xóa vĩnh viễn:",
+            text=get_translation("hard_delete_reason_label", self.lang),
             font=ctk.CTkFont(size=13)
         ).pack(anchor="w", padx=20, pady=(10, 5))
-        
         self.reason_entry = ctk.CTkEntry(
             self,
-            placeholder_text="Nhập lý do (bắt buộc)...",
-            width=400
+            placeholder_text=get_translation("hard_delete_reason_placeholder", self.lang),
+            width=500,
+            font=ctk.CTkFont(size=13)
         )
         self.reason_entry.pack(padx=20)
         self.reason_entry.focus()
-        
         # Buttons
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=20)
-        
         ctk.CTkButton(
             btn_frame,
-            text="Hủy",
+            text=get_translation("btn_cancel", self.lang),
             command=self._cancel,
-            width=100
+            width=120
         ).pack(side="left")
-        
         ctk.CTkButton(
             btn_frame,
-            text="Xóa vĩnh viễn",
+            text=get_translation("btn_delete_permanently", self.lang),
             command=self._confirm,
             fg_color="#dc3545",
             hover_color="#c82333",
-            width=150
+            width=180
         ).pack(side="right")
-        
         # Bind Enter
         self.reason_entry.bind("<Return>", lambda e: self._confirm())
-        
         self.grab_set()
         self.wait_window()
     
@@ -802,18 +817,15 @@ class HardDeleteReasonDialog(ctk.CTkToplevel):
         reason = self.reason_entry.get().strip()
         if not reason:
             messagebox.showwarning(
-                "Cảnh báo",
-                "Vui lòng nhập lý do xóa vĩnh viễn!",
+                get_translation("warning_title", self.lang),
+                get_translation("hard_delete_reason_required", self.lang),
                 parent=self
             )
             return
-        
         # Final confirmation
         if messagebox.askyesno(
-            "Xác nhận lần cuối",
-            "Bạn CHẮC CHẮN muốn xóa vĩnh viễn xe này?\n\n"
-            "Dữ liệu sẽ được lưu vào bảng lưu trữ nhưng "
-            "KHÔNG THỂ khôi phục về danh sách hoạt động.",
+            get_translation("hard_delete_final_confirm_title", self.lang),
+            get_translation("hard_delete_final_confirm_msg", self.lang),
             parent=self
         ):
             self.result = reason

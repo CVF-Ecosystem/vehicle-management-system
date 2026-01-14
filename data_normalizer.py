@@ -4,6 +4,7 @@ import logging
 import re
 import unidecode # Thư viện mạnh mẽ để bỏ dấu tiếng Việt
 from config import OWNER_MAP_FILE
+from exceptions import VINValidationError
 
 # Regex pattern cho VIN theo chuẩn ISO 3779
 # VIN phải có 17 ký tự, không chứa I, O, Q (dễ nhầm với 1, 0)
@@ -18,6 +19,7 @@ class DataNormalizer:
     """
     def __init__(self):
         self.owner_map = self._load_json_map(OWNER_MAP_FILE)
+        self.owner_map_valid = self._validate_owner_map()  # RELIABILITY FIX Issue #13
         # Trong tương lai, bạn có thể thêm các map khác ở đây, ví dụ:
         # self.type_map = self._load_json_map(TYPE_MAP_FILE)
 
@@ -29,9 +31,40 @@ class DataNormalizer:
         except FileNotFoundError:
             logging.warning(f"Không tìm thấy file map: {file_path}. Chức năng chuẩn hóa có thể bị hạn chế.")
             return {}
-        except json.JSONDecodeError:
-            logging.error(f"Lỗi đọc file {file_path}. File không đúng định dạng JSON.")
+        except json.JSONDecodeError as e:
+            logging.error(f"Lỗi đọc file {file_path}. File không đúng định dạng JSON: {e}")
             return {}
+        except Exception as e:
+            logging.error(f"Lỗi không xác định khi đọc {file_path}: {e}")
+            return {}
+    
+    def _validate_owner_map(self) -> bool:
+        """
+        Validate owner_map structure (RELIABILITY FIX Issue #13).
+        
+        Returns:
+            bool: True if map is valid, False otherwise
+        """
+        if not self.owner_map:
+            logging.warning("Owner map is empty - normalization will be disabled")
+            return False
+        
+        if not isinstance(self.owner_map, dict):
+            logging.error(f"Owner map is not a dictionary: {type(self.owner_map)}")
+            return False
+        
+        # Validate that all keys and values are strings
+        invalid_entries = []
+        for key, value in self.owner_map.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                invalid_entries.append(f"{key}: {value}")
+        
+        if invalid_entries:
+            logging.error(f"Owner map contains invalid entries (non-string): {invalid_entries[:5]}")
+            return False
+        
+        logging.info(f"Owner map validated successfully: {len(self.owner_map)} entries")
+        return True
 
     def validate_vin(self, vin: str, strict: bool = False) -> dict:
         """
@@ -39,7 +72,7 @@ class DataNormalizer:
         
         Args:
             vin: Số khung xe cần kiểm tra
-            strict: Nếu True, yêu cầu đúng 17 ký tự theo chuẩn ISO 3779
+            strict: Nếu True, yêu cầu đúng 17 ký tự theo chuẩn ISO 3779 + checksum
                    Nếu False, chấp nhận VIN từ 6-17 ký tự
         
         Returns:
@@ -92,20 +125,134 @@ class DataNormalizer:
                     "message": f"VIN phải có từ 6-17 ký tự (hiện tại: {len(normalized_vin)} ký tự)"
                 }
         
+        # SECURITY FIX Issue #12: VIN checksum validation for 17-char VINs
+        if strict and len(normalized_vin) == 17:
+            checksum_valid, checksum_msg = self._validate_vin_checksum(normalized_vin)
+            if not checksum_valid:
+                return {
+                    "valid": False,
+                    "normalized": normalized_vin,
+                    "message": f"VIN checksum không hợp lệ: {checksum_msg}"
+                }
+        
         return {
             "valid": True,
             "normalized": normalized_vin,
             "message": ""
         }
+    
+    def _validate_vin_checksum(self, vin: str) -> tuple[bool, str]:
+        """
+        Validate VIN checksum digit (position 9) theo ISO 3779.
+        
+        Args:
+            vin: 17-character VIN string
+        
+        Returns:
+            tuple: (is_valid: bool, message: str)
+        """
+        if len(vin) != 17:
+            return False, "VIN phải có 17 ký tự để kiểm tra checksum"
+        
+        # VIN transliteration table (ISO 3779)
+        transliteration = {
+            'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8,
+            'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 5, 'P': 7, 'R': 9,
+            'S': 2, 'T': 3, 'U': 4, 'V': 5, 'W': 6, 'X': 7, 'Y': 8, 'Z': 9,
+            '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9
+        }
+        
+        # Weight factors for positions
+        weights = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]
+        
+        try:
+            # Calculate weighted sum
+            total = 0
+            for i, char in enumerate(vin):
+                if char not in transliteration:
+                    return False, f"Ký tự không hợp lệ tại vị trí {i+1}: {char}"
+                total += transliteration[char] * weights[i]
+            
+            # Check digit is at position 9 (index 8)
+            check_digit = vin[8]
+            calculated_check = total % 11
+            
+            # Check digit can be 0-9 or 'X' (representing 10)
+            if calculated_check == 10:
+                expected_check = 'X'
+            else:
+                expected_check = str(calculated_check)
+            
+            if check_digit != expected_check:
+                return False, f"Check digit không đúng. Mong đợi: {expected_check}, thực tế: {check_digit}"
+            
+            return True, "Checksum hợp lệ"
+            
+        except Exception as e:
+            logging.error(f"Error validating VIN checksum: {e}")
+            return False, f"Lỗi kiểm tra checksum: {str(e)}"
 
     def normalize_vin(self, vin: str) -> str:
         """
-        Chuẩn hóa VIN: loại bỏ khoảng trắng, chuyển uppercase.
-        Không validate, chỉ normalize.
+        Chuẩn hóa VIN: loại bỏ khoảng trắng, chuyển uppercase, validate checksum ISO 3779.
+        
+        Raises:
+            VINValidationError: Nếu VIN không hợp lệ (length, invalid characters, checksum)
         """
         if not vin:
-            return ""
-        return vin.strip().upper().replace(" ", "").replace("-", "")
+            raise VINValidationError("VIN không được để trống")
+        
+        # Clean and uppercase
+        normalized = vin.strip().upper().replace(" ", "").replace("-", "")
+        
+        # Validate length
+        if len(normalized) != 17:
+            raise VINValidationError(f"VIN phải có đúng 17 ký tự (hiện tại: {len(normalized)})")
+        
+        # Validate characters (VIN không sử dụng I, O, Q)
+        invalid_chars = set('IOQ')
+        if any(c in invalid_chars for c in normalized):
+            raise VINValidationError("VIN không được chứa ký tự I, O hoặc Q")
+        
+        # Validate checksum (position 9 is check digit)
+        check_digit = normalized[8]
+        
+        # Transliteration table (ISO 3779)
+        transliteration = {
+            'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8,
+            'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 5, 'P': 7, 'R': 9,
+            'S': 2, 'T': 3, 'U': 4, 'V': 5, 'W': 6, 'X': 7, 'Y': 8, 'Z': 9
+        }
+        
+        # Weight factors
+        weights = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]
+        
+        # Calculate checksum
+        checksum_sum = 0
+        for i, char in enumerate(normalized):
+            if i == 8:  # Skip check digit position
+                continue
+            
+            # Get numeric value
+            if char.isdigit():
+                value = int(char)
+            else:
+                value = transliteration.get(char, 0)
+            
+            checksum_sum += value * weights[i]
+        
+        # Calculate check digit
+        calculated_check = checksum_sum % 11
+        expected_check_char = 'X' if calculated_check == 10 else str(calculated_check)
+        
+        # Validate
+        if check_digit != expected_check_char:
+            raise VINValidationError(
+                f"VIN checksum không hợp lệ. "
+                f"Mong đợi: {expected_check_char}, thực tế: {check_digit}"
+            )
+        
+        return normalized
 
     def normalize_owner(self, owner_name: str) -> str:
         """
@@ -197,7 +344,18 @@ def normalize_owner(owner_name: str) -> str:
     
     Returns:
         str: Tên chủ hàng đã được chuẩn hóa
+    
+    Note:
+        RELIABILITY FIX Issue #13: Returns input if owner_map is invalid/corrupted
+        
+    Returns:
+        str: Tên chủ hàng đã được chuẩn hóa
     """
+    if not normalizer.owner_map_valid:
+        # Fallback: return cleaned input without mapping
+        logging.debug(f"Owner map invalid - returning cleaned input for: {owner_name}")
+        return owner_name.strip().upper() if owner_name else ""
+    
     return normalizer.normalize_owner(owner_name)
 
 

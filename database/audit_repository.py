@@ -197,7 +197,8 @@ class AuditRepository:
         Args:
             db_path: Đường dẫn tới database. Nếu None, sử dụng config.DB_FILE.
         """
-        self.db_path = db_path or config.DB_FILE
+        default_db = getattr(config, "AUDIT_DB_FILE", None) or config.DB_FILE
+        self.db_path = db_path or default_db
         self._ensure_table_exists()
         logger.info(f"AuditRepository initialized. DB: {self.db_path}")
     
@@ -706,6 +707,7 @@ def log_audit(
     record_id: Optional[str] = None,
     old_value: Optional[Union[str, Dict]] = None,
     new_value: Optional[Union[str, Dict]] = None,
+    user_id: Optional[int] = None,
     username: str = "System",
     details: Optional[Dict[str, Any]] = None
 ) -> int:
@@ -724,6 +726,20 @@ def log_audit(
     Returns:
         int: ID của audit entry
     """
+    # Best-effort: bind audit entry to the currently logged-in user.
+    # Keep this import local to avoid hard dependency/circular imports.
+    if (not user_id) or (not username) or username == "System":
+        try:
+            from auth.auth_manager import AuthManager  # local import
+
+            auth = AuthManager.get_instance()
+            if not user_id:
+                user_id = auth.get_current_user_id()
+            if (not username) or username == "System":
+                username = auth.get_current_username() or username
+        except Exception:
+            pass
+
     repo = get_audit_repository()
     return repo.log(
         action=action,
@@ -731,6 +747,7 @@ def log_audit(
         record_id=record_id,
         old_value=old_value,
         new_value=new_value,
+        user_id=user_id,
         username=username,
         details=details
     )

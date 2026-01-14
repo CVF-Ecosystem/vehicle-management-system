@@ -5,22 +5,28 @@ Singleton quản lý session và authentication state của ứng dụng.
 """
 
 import logging
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable
 from functools import wraps
 
 from database.user_repository import UserRepository
 from auth.permissions import Permission, has_permission, ROLE_ADMIN
+import config
 
 logger = logging.getLogger(__name__)
 
 
 class AuthManager:
     """
-    Singleton quản lý authentication state.
+    Singleton quản lý authentication state với session timeout.
     """
     _instance = None
     _current_user: Optional[Dict[str, Any]] = None
     _user_repository: Optional[UserRepository] = None
+    _login_time: Optional[datetime] = None
+    
+    # Session timeout: 30 minutes idle
+    SESSION_TIMEOUT_MINUTES = 30
     
     def __new__(cls, db_path: str = None):
         if cls._instance is None:
@@ -31,9 +37,12 @@ class AuthManager:
     def __init__(self, db_path: str = None):
         if self._initialized:
             return
-        
-        self._user_repository = UserRepository(db_path)
+
+        # Default to dedicated security DB (separate from vehicle DB)
+        target_db = db_path if db_path is not None else getattr(config, "SECURITY_DB_FILE", None)
+        self._user_repository = UserRepository(target_db)
         self._current_user = None
+        self._login_time = None
         self._initialized = True
         logger.info("AuthManager initialized")
     
@@ -58,7 +67,7 @@ class AuthManager:
     
     def login(self, username: str, password: str) -> Dict[str, Any]:
         """
-        Đăng nhập user.
+        Đăng nhập user với session timeout tracking.
         
         Args:
             username: Tên đăng nhập
@@ -71,6 +80,7 @@ class AuthManager:
         
         if result['success']:
             self._current_user = result['user']
+            self._login_time = datetime.now()
             logger.info(f"User '{username}' logged in (role: {self._current_user['role']})")
         
         return result
@@ -82,16 +92,33 @@ class AuthManager:
             user_id = self._current_user['id']
             
             self._user_repository.log_logout(user_id, username)
-            self._current_user = None
             
             logger.info(f"User '{username}' logged out")
+        
+        # Always clear state, even if no current user
+        self._current_user = None
+        self._login_time = None
     
     def is_logged_in(self) -> bool:
-        """Kiểm tra có user đang đăng nhập không."""
-        return self._current_user is not None
+        """Kiểm tra có user đang đăng nhập và session chưa timeout."""
+        if self._current_user is None:
+            return False
+        
+        # Check session timeout
+        if self._is_session_expired():
+            logger.warning(f"Session expired for user: {self._current_user['username']}")
+            self.logout()
+            return False
+        
+        return True
     
     def get_current_user(self) -> Optional[Dict[str, Any]]:
-        """Lấy thông tin user đang đăng nhập."""
+        """Lấy thông tin user đang đăng nhập (auto logout nếu session timeout)."""
+        if self._current_user and self._is_session_expired():
+            logger.warning(f"Session expired for user: {self._current_user['username']}")
+            self.logout()
+            return None
+        
         return self._current_user
     
     def get_current_user_id(self) -> Optional[int]:
@@ -99,6 +126,49 @@ class AuthManager:
         if self._current_user:
             return self._current_user['id']
         return None
+    
+    def _is_session_expired(self) -> bool:
+        """
+        Kiểm tra session có hết hạn không (30 phút idle timeout).
+        
+        Returns:
+            bool: True nếu session đã timeout
+        """
+        if self._login_time is None:
+            return True
+        
+        elapsed = datetime.now() - self._login_time
+        timeout = timedelta(minutes=self.SESSION_TIMEOUT_MINUTES)
+        
+        return elapsed > timeout
+    
+    def refresh_session(self):
+        """
+        Refresh session timeout (gọi khi user có hoạt động).
+        Dùng cho các thao tác quan trọng để giữ session active.
+        """
+        if self._current_user:
+            self._login_time = datetime.now()
+            logger.debug(f"Session refreshed for user: {self._current_user['username']}")
+    
+    def get_session_time_remaining(self) -> Optional[int]:
+        """
+        Lấy thời gian còn lại của session (phút).
+        
+        Returns:
+            int: Số phút còn lại, hoặc None nếu không có session
+        """
+        if not self._current_user or self._login_time is None:
+            return None
+        
+        elapsed = datetime.now() - self._login_time
+        timeout = timedelta(minutes=self.SESSION_TIMEOUT_MINUTES)
+        remaining = timeout - elapsed
+        
+        if remaining.total_seconds() <= 0:
+            return 0
+        
+        return int(remaining.total_seconds() // 60)
     
     def get_current_username(self) -> Optional[str]:
         """Lấy username của user đang đăng nhập."""

@@ -1,15 +1,33 @@
 # config.py
 
+
+import sys, os
+def get_resource_path(relative_path):
+	if hasattr(sys, '_MEIPASS'):
+		base_path = sys._MEIPASS
+	else:
+		base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+	return os.path.join(base_path, relative_path)
+
 # --- Cấu hình file ---
-DB_FILE = "vehicle_management_v3.0"
-CONFIG_FILE = "config.ini"
-LOGS_DIR = "logs"
-ARCHIVES_DIR = "archives"
-OWNER_MAP_FILE = "owner_map.json"
+DB_FILE = get_resource_path("vehicle_management_v5.1")
+# Database riêng cho đăng nhập/audit (tách với DB xe)
+# Đặt trong thư mục config để dễ quản lý/backup.
+SECURITY_DB_FILE = get_resource_path("config/security.db")
+# Audit logs mặc định ghi vào security DB
+AUDIT_DB_FILE = SECURITY_DB_FILE
+CONFIG_FILE = get_resource_path("config.ini")
+LOGS_DIR = get_resource_path("logs")
+ARCHIVES_DIR = get_resource_path("archives")
+OWNER_MAP_FILE = get_resource_path("owner_map.json")
+
+# CONFIGURABILITY FIX Issue #15: Configurable backup location
+# Can be overridden via environment variable: BACKUP_DIR
+BACKUP_DIR = os.getenv("BACKUP_DIR", get_resource_path("backups"))
 
 # --- Thông tin ứng dụng ---
 APP_NAME = "Phần mềm Quản lý xe"
-APP_VERSION = "V5.0"
+APP_VERSION = "V1.0 @2026"
 
 # --- Hằng số nghiệp vụ ---
 STATUS_IN_STOCK = "IN_STOCK"
@@ -56,5 +74,21 @@ FONT_WEIGHT_ITALIC = "italic"
 
 DEFAULT_DATE_FORMAT = "DD/MM/YYYY"   # cấu hình chung toàn hệ thống
 DEFAULT_TIME_FORMAT = "HH:mm"        # cấu hình chung toàn hệ thống
+
+# --- Phase 3 automation/reporting defaults ---
+# Các thư mục mặc định cho auto-import và xuất báo cáo
+AUTOMATION_MONITOR_FOLDER = os.getenv("AUTOMATION_MONITOR_FOLDER", get_resource_path("data/monitor"))
+AUTOMATION_IMPORT_FOLDER = os.getenv("AUTOMATION_IMPORT_FOLDER", get_resource_path("data/imports"))
+AUTOMATION_LOG_FOLDER = os.getenv("AUTOMATION_LOG_FOLDER", get_resource_path("logs/automation"))
+AUTOMATION_TASK_TIME = os.getenv("AUTOMATION_TASK_TIME", "02:00")  # Task Scheduler daily time
+
+DEFAULT_EXPORT_FOLDER = os.getenv("DEFAULT_EXPORT_FOLDER", get_resource_path("exports"))
+DEFAULT_IMPORT_FOLDER = os.getenv("DEFAULT_IMPORT_FOLDER", get_resource_path("imports"))
+
+# --- VIN Validation ---
+# True = Bắt buộc VIN đúng 17 ký tự + checksum hợp lệ (theo chuẩn ISO 3779)
+# False = Chấp nhận VIN từ 6-17 ký tự, không kiểm tra checksum (có cảnh báo)
+VIN_STRICT_MODE = False
+# VIN_STRICT_MODE = True  # Bỏ comment dòng này khi muốn bắt buộc VIN chuẩn 17 ký tự
 
 

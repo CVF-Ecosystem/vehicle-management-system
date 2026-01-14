@@ -39,3 +39,9 @@
 2025-12-02 14:36:35,475 - INFO - Đã tạo thành công file Word: D:/UNG DUNG AI/NANG CAP PHAN MEM QUAN LY XE/SOFT QUAN LY XE 5.0 - new\PhieuVanChuyen_CAR DATA_20251202_143634.docx
 2025-12-02 14:36:35,480 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
 2025-12-02 14:36:35,492 - INFO - Hoàn thành xử lý batch 1/1 file thành công.
+2025-12-20 19:14:25,928 - INFO - --- Khởi động ứng dụng ---
+2025-12-20 19:14:26,169 - INFO - Đã đọc cấu hình từ: config_phieuvc_v1.1.ini
+2025-12-20 19:14:26,283 - INFO - Giao diện ứng dụng đã sẵn sàng.
+2025-12-20 19:14:32,883 - INFO - Language changed to: en
+2025-12-20 19:14:43,758 - INFO - Đã lưu cấu hình vào: config_phieuvc_v1.1.ini
+2025-12-20 19:14:43,758 - INFO - --- Closing application ---

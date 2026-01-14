@@ -1,7 +1,7 @@
 # database/vehicle_manager.py
 import sqlite3
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 
 logger = logging.getLogger(__name__)
@@ -12,6 +12,23 @@ from data_normalizer import validate_vin, normalize_vin, normalize_owner, normal
 from exceptions import ValidationError, VINValidationError, DateValidationError, RequiredFieldError
 
 class VehicleManager(BaseManager):
+    def clear_archived_deleted_vehicles(self):
+        """
+        Xóa toàn bộ bản ghi trong bảng deleted_vehicles_archive (xe đã xóa vĩnh viễn).
+        Returns:
+            dict: {"success": bool, "message": str, "count": int}
+        """
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM deleted_vehicles_archive")
+            count = cur.fetchone()[0]
+            cur.execute("DELETE FROM deleted_vehicles_archive")
+            self.conn.commit()
+            logger.info(f"Đã xóa toàn bộ {count} bản ghi trong deleted_vehicles_archive.")
+            return {"success": True, "message": f"Đã xóa {count} bản ghi archive.", "count": count}
+        except Exception as e:
+            logger.exception(f"Lỗi khi xóa toàn bộ archive: {e}")
+            return {"success": False, "message": str(e), "count": 0}
     def __init__(self):
         super().__init__()
         self.location_manager = LocationManager()
@@ -41,7 +58,8 @@ class VehicleManager(BaseManager):
         errors = []
         
         # Validate VIN
-        vin_result = validate_vin(vin, strict=False)
+        from config import VIN_STRICT_MODE
+        vin_result = validate_vin(vin, strict=VIN_STRICT_MODE)
         if not vin_result["valid"]:
             logger.warning(f"VIN validation failed: {vin} - {vin_result['message']}")
             raise VINValidationError(
@@ -49,6 +67,10 @@ class VehicleManager(BaseManager):
                 message=vin_result["message"]
             )
         normalized_vin = vin_result["normalized"]
+        
+        # Cảnh báo nếu VIN không đủ 17 ký tự (khi strict=False)
+        if not VIN_STRICT_MODE and len(normalized_vin) != 17:
+            logger.warning(f"VIN không đủ 17 ký tự: {normalized_vin} ({len(normalized_vin)} ký tự) - Vui lòng kiểm tra lại!")
         
         # Validate Owner (required field)
         if not owner or not owner.strip():
@@ -67,6 +89,22 @@ class VehicleManager(BaseManager):
                     field_name="date_in",
                     value=str(date_in),
                     expected_format="datetime object"
+                )
+            
+            # CRITICAL FIX: Reject future dates
+            # Use local date comparison to avoid timezone confusion for end users
+            now_local = datetime.now()
+            
+            # Compare dates only (ignore time), using local timezone
+            date_in_local = date_in.replace(tzinfo=None) if date_in.tzinfo else date_in
+            
+            if date_in_local.date() > now_local.date():
+                logger.warning(f"Date validation failed: future date {date_in_local.date()} for VIN {normalized_vin}")
+                raise DateValidationError(
+                    field_name="date_in",
+                    value=date_in.isoformat(),
+                    expected_format="date cannot be in the future",
+                    message=f"Ngày nhập không thể là ngày tương lai. Ngày nhập: {date_in_local.date()}, Hôm nay: {now_local.date()}"
                 )
         
         return {
@@ -127,6 +165,25 @@ class VehicleManager(BaseManager):
                     "INSERT INTO vehicles(vin, owner, vehicle_type, date_in, status, is_active, location_id) VALUES (?, ?, ?, ?, ?, 1, ?)",
                     (normalized_vin, normalized_owner, normalized_type, date_in.isoformat(), STATUS_IN_STOCK, location_id)
                 )
+
+            try:
+                from database.audit_repository import log_create
+
+                log_create(
+                    table_name="vehicles",
+                    record_id=normalized_vin,
+                    new_value={
+                        "vin": normalized_vin,
+                        "owner": normalized_owner,
+                        "vehicle_type": normalized_type,
+                        "date_in": date_in.isoformat(),
+                        "status": STATUS_IN_STOCK,
+                        "location_id": location_id,
+                    },
+                )
+            except Exception:
+                # Audit must never break core flow
+                pass
             return {"success": True, "message": "Thêm xe mới thành công."}
         
         except VINValidationError as e:
@@ -167,6 +224,12 @@ class VehicleManager(BaseManager):
             dict: {"success": bool, "message": str}
         """
         try:
+            old_vehicle = None
+            try:
+                old_vehicle = self.get_vehicle_by_vin(vin)
+            except Exception:
+                old_vehicle = None
+
             with self.conn:
                 cur = self.conn.cursor()
                 cur.execute("""
@@ -175,6 +238,23 @@ class VehicleManager(BaseManager):
                 """, (date_out.isoformat(), STATUS_SHIPPED, transport_vehicle, driver_name, vin, STATUS_IN_STOCK))
                 
                 if cur.rowcount > 0:
+                    try:
+                        from database.audit_repository import log_update
+
+                        log_update(
+                            table_name="vehicles",
+                            record_id=vin,
+                            old_value=old_vehicle,
+                            new_value={
+                                "date_out": date_out.isoformat(),
+                                "status": STATUS_SHIPPED,
+                                "transport_vehicle": transport_vehicle,
+                                "driver_name": driver_name,
+                                "location_id": None,
+                            },
+                        )
+                    except Exception:
+                        pass
                     return {"success": True, "message": "Xuất xe thành công."}
                 else:
                     return {"success": False, "message": "Không tìm thấy xe hoặc xe không ở trạng thái Tồn kho."}
@@ -407,8 +487,26 @@ class VehicleManager(BaseManager):
 
     def update_vehicle_details(self, vin, owner, vehicle_type):
         try:
+            old_vehicle = None
+            try:
+                old_vehicle = self.get_vehicle_by_vin(vin)
+            except Exception:
+                old_vehicle = None
+
             with self.conn:
                 self.conn.execute("UPDATE vehicles SET owner = ?, vehicle_type = ? WHERE vin = ? AND is_active = 1", (owner, vehicle_type, vin))
+
+            try:
+                from database.audit_repository import log_update
+
+                log_update(
+                    table_name="vehicles",
+                    record_id=str(vin),
+                    old_value=old_vehicle or {},
+                    new_value={"owner": owner, "vehicle_type": vehicle_type},
+                )
+            except Exception:
+                pass
             return {"success": True, "message": "Cập nhật thành công."}
         except Exception as e:
             logger.exception(f"Lỗi khi cập nhật chi tiết cho VIN {vin}")
@@ -437,6 +535,29 @@ class VehicleManager(BaseManager):
             # =========================================================
             
             self.commit_transaction()
+
+            try:
+                from database.audit_repository import log_update
+
+                log_update(
+                    table_name="vehicles",
+                    record_id=str(old_vin),
+                    old_value=old_record,
+                    new_value={
+                        "vin": new_vin,
+                        "owner": owner,
+                        "vehicle_type": vehicle_type,
+                        "date_in": old_record.get("date_in"),
+                        "date_out": old_record.get("date_out"),
+                        "status": old_record.get("status"),
+                        "transport_vehicle": old_record.get("transport_vehicle"),
+                        "driver_name": old_record.get("driver_name"),
+                        "dispatch_id": old_record.get("dispatch_id"),
+                        "location_id": old_record.get("location_id"),
+                    },
+                )
+            except Exception:
+                pass
             return {"success": True, "message": f"Đã cập nhật VIN từ {old_vin} sang {new_vin}."}
         except sqlite3.IntegrityError:
             self.rollback_transaction()
@@ -486,6 +607,31 @@ class VehicleManager(BaseManager):
             self.commit_transaction()
             if cur.rowcount > 0:
                 logger.info(f"Soft deleted vehicle {vin} by {deleted_by}. Reason: {delete_reason}")
+
+                try:
+                    from database.audit_repository import log_audit, AuditAction
+
+                    log_audit(
+                        action=AuditAction.DELETE,
+                        table_name="vehicles",
+                        record_id=str(vin),
+                        old_value=vehicle,
+                        new_value={
+                            "is_active": 0,
+                            "is_deleted": 1,
+                            "deleted_at": deleted_at,
+                            "deleted_by": deleted_by,
+                            "delete_reason": delete_reason,
+                            "location_id": None,
+                        },
+                        details={
+                            "soft_delete": True,
+                            "source": "VehicleManager.soft_delete_vehicle",
+                        },
+                    )
+                except Exception:
+                    pass
+
                 return {"success": True, "message": "Xóa xe thành công."}
             else:
                 return {"success": False, "message": "Không tìm thấy xe để xóa hoặc xe đã bị xóa trước đó."}
@@ -518,6 +664,8 @@ class VehicleManager(BaseManager):
             if not vehicle:
                 self.rollback_transaction()
                 return {"success": False, "message": f"Không tìm thấy xe đã xóa với VIN: {vin}"}
+
+            old_value = dict(vehicle)
             
             # Khôi phục xe
             cur.execute("""
@@ -533,6 +681,30 @@ class VehicleManager(BaseManager):
             self.commit_transaction()
             if cur.rowcount > 0:
                 logger.info(f"Restored vehicle {vin} by {restored_by}")
+
+                try:
+                    from database.audit_repository import log_audit, AuditAction
+
+                    log_audit(
+                        action=AuditAction.UPDATE,
+                        table_name="vehicles",
+                        record_id=str(vin),
+                        old_value=old_value,
+                        new_value={
+                            "is_active": 1,
+                            "is_deleted": 0,
+                            "deleted_at": None,
+                            "deleted_by": None,
+                            "delete_reason": None,
+                        },
+                        details={
+                            "source": "VehicleManager.restore_deleted_vehicle",
+                            "restored_by": restored_by,
+                        },
+                    )
+                except Exception:
+                    pass
+
                 return {"success": True, "message": f"Khôi phục xe {vin} thành công."}
             else:
                 return {"success": False, "message": "Không thể khôi phục xe."}
@@ -660,6 +832,26 @@ class VehicleManager(BaseManager):
             
             self.commit_transaction()
             logger.info(f"Hard deleted vehicle {vin} by {deleted_by}. Archived to deleted_vehicles_archive.")
+
+            try:
+                from database.audit_repository import log_audit, AuditAction
+
+                log_audit(
+                    action=AuditAction.DELETE,
+                    table_name="vehicles",
+                    record_id=str(vin),
+                    old_value=vehicle_dict,
+                    details={
+                        "hard_delete": True,
+                        "source": "VehicleManager.hard_delete_vehicle",
+                        "deleted_by": deleted_by,
+                        "delete_reason": delete_reason,
+                        "archived_to": "deleted_vehicles_archive",
+                    },
+                )
+            except Exception:
+                pass
+
             return {"success": True, "message": f"Đã xóa vĩnh viễn xe {vin} và lưu trữ bản ghi."}
         except Exception as e:
             self.rollback_transaction()
@@ -696,16 +888,50 @@ class VehicleManager(BaseManager):
             logger.error(f"Lỗi khi lấy xe theo VIN '{vin}': {e}")
             return None
 
-    def search_all_vehicles(self, vin="", owner="", vehicle_type="", transport="", driver=""):
-        """Tìm kiếm toàn cục trên lịch sử xe, kèm thông tin vị trí."""
-        query = "SELECT v.*, l.full_location_name FROM vehicles v LEFT JOIN locations l ON v.location_id = l.id WHERE v.is_active = 1"
+    def search_all_vehicles(self, vin="", owner="", vehicle_type="", transport="", driver="",
+                            status_filter="all", date_from="", date_to="", date_field="date_in",
+                            block=""):
+        """
+        Tìm kiếm toàn cục trên lịch sử xe, kèm thông tin vị trí.
+        
+        Args:
+            vin: Lọc theo VIN (LIKE)
+            owner: Lọc theo chủ hàng (LIKE)
+            vehicle_type: Lọc theo loại xe (LIKE)
+            transport: Lọc theo xe vận chuyển (LIKE)
+            driver: Lọc theo tài xế (LIKE)
+            status_filter: "all" / "in_stock" / "shipped"
+            date_from: Ngày bắt đầu (YYYY-MM-DD)
+            date_to: Ngày kết thúc (YYYY-MM-DD)
+            date_field: "date_in" hoặc "date_out"
+            block: Lọc theo block vị trí
+        """
+        query = "SELECT v.*, l.full_location_name, l.block FROM vehicles v LEFT JOIN locations l ON v.location_id = l.id WHERE v.is_active = 1"
         params = []
         conditions = []
+        
+        # Text filters
         if vin: conditions.append("v.vin LIKE ?"); params.append(f"%{vin}%")
         if owner: conditions.append("v.owner LIKE ?"); params.append(f"%{owner}%")
         if vehicle_type: conditions.append("v.vehicle_type LIKE ?"); params.append(f"%{vehicle_type}%")
         if transport: conditions.append("v.transport_vehicle LIKE ?"); params.append(f"%{transport}%")
         if driver: conditions.append("v.driver_name LIKE ?"); params.append(f"%{driver}%")
+        
+        # Status filter
+        if status_filter == "in_stock":
+            conditions.append("v.status != ?"); params.append(STATUS_SHIPPED)
+        elif status_filter == "shipped":
+            conditions.append("v.status = ?"); params.append(STATUS_SHIPPED)
+        
+        # Date range filter
+        if date_from:
+            conditions.append(f"DATE(v.{date_field}) >= ?"); params.append(date_from)
+        if date_to:
+            conditions.append(f"DATE(v.{date_field}) <= ?"); params.append(date_to)
+        
+        # Block filter
+        if block:
+            conditions.append("l.block = ?"); params.append(block)
         
         if conditions: query += " AND " + " AND ".join(conditions)
         query += " ORDER BY v.date_in DESC"
@@ -732,6 +958,18 @@ class VehicleManager(BaseManager):
             self.location_manager.set_location_occupied(new_location_id, True)
             if old_location_id:
                 self.location_manager.set_location_occupied(old_location_id, False)
+
+            try:
+                from database.audit_repository import log_update
+
+                log_update(
+                    table_name="vehicles",
+                    record_id=vin,
+                    old_value={"location_id": old_location_id},
+                    new_value={"location_id": new_location_id},
+                )
+            except Exception:
+                pass
             
             self.commit_transaction()
             logger.info(f"Đã di chuyển xe {vin} từ vị trí ID {old_location_id} sang {new_location_id}.")
@@ -793,6 +1031,26 @@ class VehicleManager(BaseManager):
             archive_conn.commit()
 
             logger.info(f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi vào file: {archive_db_path}")
+
+            try:
+                from database.audit_repository import log_audit, AuditAction
+
+                log_audit(
+                    action=AuditAction.ARCHIVE,
+                    table_name="vehicles",
+                    record_id=f"date_out:{start_date.isoformat()}:{end_date.isoformat()}",
+                    details={
+                        "source": "VehicleManager.archive_shipped_vehicles",
+                        "date_from": start_date.isoformat(),
+                        "date_to": end_date.isoformat(),
+                        "count": len(vins_to_delete),
+                        "archive_db_path": archive_db_path,
+                        "vins_sample": vins_to_delete[:50],
+                    },
+                )
+            except Exception:
+                pass
+
             return {"success": True, "message": f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi.", "count": len(vins_to_delete)}
 
         except Exception as e:
