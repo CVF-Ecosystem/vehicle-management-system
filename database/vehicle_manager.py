@@ -323,7 +323,7 @@ class VehicleManager(BaseManager):
 
     def get_in_stock_count(self, owner_filter=None, search_term=None):
         """Đếm tổng số xe tồn kho thỏa mãn điều kiện lọc."""
-        query = "SELECT COUNT(vin) FROM vehicles WHERE status=? AND is_active = 1"
+        query = "SELECT COUNT(vin) FROM vehicles WHERE status=? AND is_active = 1 AND is_deleted = 0"
         params = [STATUS_IN_STOCK]
         if owner_filter:
             query += " AND owner = ?"
@@ -336,10 +336,37 @@ class VehicleManager(BaseManager):
             cur = self.conn.cursor()
             cur.execute(query, params)
             count = cur.fetchone()[0]
-            return count
+            return count if count is not None else 0
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi đếm số xe tồn kho: {e}")
             return 0
+
+    def get_vins_ordered_by_id(self, vins_list):
+        """
+        Lấy danh sách VINs theo thứ tự rowid trong database (thứ tự nhập vào) GIẢM DẦN.
+        Xe nhập sau sẽ được gán vị trí trước (phù hợp với thứ tự hiển thị trong UI).
+        
+        Args:
+            vins_list: List các VIN cần sắp xếp
+            
+        Returns:
+            list: Danh sách VINs đã sắp xếp theo rowid giảm dần (xe mới nhất trước)
+        """
+        if not vins_list:
+            return []
+        
+        try:
+            placeholders = ','.join('?' * len(vins_list))
+            cur = self.conn.cursor()
+            cur.execute(f"""
+                SELECT vin FROM vehicles 
+                WHERE vin IN ({placeholders}) AND status=? AND is_active = 1
+                ORDER BY rowid DESC
+            """, vins_list + [STATUS_IN_STOCK])
+            return [row['vin'] for row in cur.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy VINs theo thứ tự: {e}")
+            return list(vins_list)  # Fallback to original list
 
     def get_shipped_vehicles_history(self, start_date=None, end_date=None):
         """Lấy lịch sử các xe đã xuất trong một khoảng thời gian."""

@@ -272,7 +272,7 @@ translations = {
     "btn_clear_filters": {"vi": "Xóa bộ lọc", "en": "Clear Filters"},
     "lbl_status": {"vi": "Trạng thái:", "en": "Status:"},
     "lbl_date_filter": {"vi": "Lọc theo ngày:", "en": "Filter by date:"},
-    "lbl_block": {"vi": "Block:", "en": "Block:"},
+    "lbl_block": {"vi": "Khu:", "en": "Block:"},
     "status_all": {"vi": "Tất cả", "en": "All"},
     "status_in_stock": {"vi": "Tồn bãi", "en": "In Stock"},
     "status_shipped": {"vi": "Đã xuất", "en": "Shipped"},
@@ -396,10 +396,10 @@ translations = {
     # --- Cửa sổ Quản lý Layout ---
     "manage_layout_title": {"vi": "Quản lý Layout", "en": "Manage Yard Layout"},
     "frame_manual_layout": {"vi": "Tạo Layout:", "en": "Manual Layout Generate:"},
-    "placeholder_block": {"vi": "Tên Lô (ví dụ: A, KHU CFS)", "en": "Block Name (e.g., A, CFS AREA)"},
+    "placeholder_block": {"vi": "Tên Khu (ví dụ: A, B, KHU1)", "en": "Block Name (e.g., A, B, BLOCK1)"},
     "placeholder_row_start": {"vi": "Từ Dãy (số)", "en": "From Row (number)"},
     "placeholder_row_end": {"vi": "Đến Dãy (số)", "en": "To Row (number)"},
-    "placeholder_slots": {"vi": "Số Ô/Dãy", "en": "Slots/Row"},
+    "placeholder_slots": {"vi": "Số vị trí/Dãy", "en": "Positions/Row"},
     "placeholder_scan_vin": {"vi": "Quét hoặc nhập VIN...", "en": "Scan or enter VIN..."},
     "btn_generate": {"vi": "Tạo Vị trí", "en": "Generate Locations"},
     "frame_import_layout": {"vi": "Tạo Layout từ File Excel:", "en": "Generate Layout from Excel File:"},
@@ -444,6 +444,8 @@ translations = {
     "batch_more_vehicles": {"vi": "xe nữa", "en": "more vehicles"},
     "warn_partial_fail": {"vi": "Một số lỗi xảy ra", "en": "Some Errors Occurred"},
     "warn_select_location": {"vi": "Vui lòng chọn một vị trí.", "en": "Please select a location."},
+    "batch_auto_assign": {"vi": "🚀 Gán tự động (mỗi xe 1 vị trí trống)", "en": "🚀 Auto assign (each vehicle to a free slot)"},
+    "batch_manual_assign": {"vi": "📍 Chọn 1 vị trí cho tất cả", "en": "📍 Select one location for all"},
     # === END PHASE 2.3 ===
     
     # === PHASE 2.4: Keyboard Shortcuts Translations ===
@@ -638,9 +640,9 @@ translations = {
     # ===================================================================
     "tab_yard_map": {"vi": "🗺️ Bản đồ bãi", "en": "🗺️ Yard Map"},
     "yard_map_title": {"vi": "Bản đồ bãi xe", "en": "Yard Map"},
-    "yard_map_filter_block": {"vi": "Block", "en": "Block"},
+    "yard_map_filter_block": {"vi": "Khu", "en": "Block"},
     "yard_map_filter_status": {"vi": "Trạng thái", "en": "Status"},
-    "yard_map_all_blocks": {"vi": "Tất cả Block", "en": "All Blocks"},
+    "yard_map_all_blocks": {"vi": "Tất cả Khu", "en": "All Blocks"},
     "yard_map_all_status": {"vi": "Tất cả", "en": "All"},
     "yard_map_status_empty": {"vi": "Trống", "en": "Empty"},
     "yard_map_status_occupied": {"vi": "Có xe", "en": "Occupied"},
@@ -809,6 +811,17 @@ translations = {
     # == PHASE 3: PDF REPORT MENU
     # ===================================================================
     "menu_pdf_report": {"vi": "📊 Xuất báo cáo PDF", "en": "📊 Export PDF Report"},
+
+    # ===================================================================
+    # == WEB DASHBOARD (STREAMLIT)
+    # ===================================================================
+    "menu_web_dashboard": {"vi": "🌐 Web Dashboard", "en": "🌐 Web Dashboard"},
+    "web_dashboard_starting": {"vi": "Đang khởi động Web Dashboard...", "en": "Starting Web Dashboard..."},
+    "web_dashboard_started": {"vi": "Web Dashboard đã khởi động tại: {url}", "en": "Web Dashboard started at: {url}"},
+    "web_dashboard_error": {"vi": "Lỗi khởi động Web Dashboard: {error}", "en": "Error starting Web Dashboard: {error}"},
+    "web_dashboard_already_running": {"vi": "Web Dashboard đang chạy tại: {url}", "en": "Web Dashboard is running at: {url}"},
+    "web_dashboard_stopped": {"vi": "Web Dashboard đã dừng", "en": "Web Dashboard stopped"},
+    "menu_stop_web_dashboard": {"vi": "⏹️ Dừng Web Dashboard", "en": "⏹️ Stop Web Dashboard"},
 
 }
 

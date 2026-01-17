@@ -4,6 +4,10 @@ from tkinter import messagebox, Menu, filedialog
 from datetime import datetime
 import logging
 import os
+import subprocess
+import webbrowser
+import threading
+import socket
 
 import utils
 from utils import setup_logging, load_config, save_config
@@ -245,11 +249,18 @@ class InventoryApp(ctk.CTk):
         self.settings_menu.add_command(label=self.get_translation("menu_archive"), command=self.prompt_archive_data)
 
     def _build_tabs(self):
-        self.tabs = ctk.CTkTabview(self, command=self.on_tab_change)
-        self.tabs.pack(fill="both", expand=True, padx=10, pady=10)
+        # Frame chứa tabs và nút Web Dashboard
+        self.tabs_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.tabs_container.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        
+        self.tabs = ctk.CTkTabview(self.tabs_container, command=self.on_tab_change)
+        self.tabs.pack(side="left", fill="both", expand=True)
 
         tab_names = ["tab_inbound", "tab_dispatch", "tab_outbound", "tab_stock", "tab_search", "tab_yard_map", "tab_dashboard", "tab_log"]
         self.tab_map = {name: self.tabs.add(self.get_translation(name)) for name in tab_names}
+        
+        # === NÚT WEB DASHBOARD - Đặt bên phải, gần tab Nhật ký ===
+        self._build_web_dashboard_button()
 
         # === SỬA LỖI: Khởi tạo tất cả các đối tượng tab trước ===
         self.inbound_tab = InboundTab(self.tab_map["tab_inbound"], self)
@@ -270,6 +281,57 @@ class InventoryApp(ctk.CTk):
         for tab in [self.inbound_tab, self.dispatch_tab, self.outbound_tab, self.stock_tab, self.search_tab, self.yard_map_tab, self.dashboard_tab]:
             if hasattr(tab, 'update_language'):
                 tab.update_language()
+
+    def _build_web_dashboard_button(self):
+        """Xây dựng nút Web Dashboard bên phải tab bar."""
+        # Frame chứa nút, đặt ở góc trên bên phải
+        self.web_btn_frame = ctk.CTkFrame(self.tabs_container, fg_color="transparent")
+        self.web_btn_frame.pack(side="right", anchor="n", padx=(5, 0), pady=(5, 0))
+        
+        # Nút Web Dashboard chính
+        self.web_dashboard_btn = ctk.CTkButton(
+            self.web_btn_frame,
+            text="🌐 Web Dashboard",
+            command=self._launch_web_dashboard,
+            width=140,
+            height=32,
+            fg_color="#2980b9",
+            hover_color="#3498db",
+            font=self.font_normal
+        )
+        self.web_dashboard_btn.pack(pady=(0, 5))
+        
+        # Nút Stop (ẩn mặc định)
+        self.web_stop_btn = ctk.CTkButton(
+            self.web_btn_frame,
+            text="⏹ Dừng",
+            command=self._stop_web_dashboard,
+            width=140,
+            height=28,
+            fg_color="#c0392b",
+            hover_color="#e74c3c",
+            font=self.font_small
+        )
+        # Không pack ngay, chỉ hiện khi dashboard đang chạy
+        
+    def _update_web_dashboard_buttons(self):
+        """Cập nhật trạng thái nút Web Dashboard."""
+        is_running = hasattr(self, '_streamlit_process') and self._streamlit_process and self._streamlit_process.poll() is None
+        
+        if is_running:
+            self.web_dashboard_btn.configure(
+                text="🌐 Mở Dashboard",
+                fg_color="#27ae60",
+                hover_color="#2ecc71"
+            )
+            self.web_stop_btn.pack(pady=(0, 5))
+        else:
+            self.web_dashboard_btn.configure(
+                text="🌐 Web Dashboard",
+                fg_color="#2980b9",
+                hover_color="#3498db"
+            )
+            self.web_stop_btn.pack_forget()
 
     def _build_status_bar(self):
         """Xây dựng thanh trạng thái ở dưới cùng cửa sổ."""
@@ -673,6 +735,135 @@ class InventoryApp(ctk.CTk):
         OnboardingDialog(self)
     # === END PHASE 3 ===
 
+    # === WEB DASHBOARD (STREAMLIT) ===
+    def _find_free_port(self, start_port=8501, max_attempts=10):
+        """Tìm port trống để chạy Streamlit."""
+        for port in range(start_port, start_port + max_attempts):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('localhost', port))
+                    return port
+            except OSError:
+                continue
+        return None
+
+    def _launch_web_dashboard(self):
+        """Khởi động Web Dashboard (Streamlit)."""
+        # Check if already running
+        if hasattr(self, '_streamlit_process') and self._streamlit_process and self._streamlit_process.poll() is None:
+            url = f"http://localhost:{self._streamlit_port}"
+            msg = self.get_translation("web_dashboard_already_running").format(url=url)
+            self.show_toast(msg)
+            webbrowser.open(url)
+            return
+        
+        # Find free port
+        port = self._find_free_port()
+        if not port:
+            messagebox.showerror("Error", "Không tìm được port trống để chạy Web Dashboard")
+            return
+        
+        self._streamlit_port = port
+        
+        # Show starting message
+        self.status_var.set(self.get_translation("web_dashboard_starting"))
+        self.update_idletasks()
+        
+        def run_streamlit():
+            try:
+                # Get path to web_dashboard.py
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                dashboard_path = os.path.join(script_dir, "web_dashboard.py")
+                
+                if not os.path.exists(dashboard_path):
+                    self.after(0, lambda: messagebox.showerror("Error", f"Không tìm thấy file: {dashboard_path}"))
+                    return
+                
+                # Launch Streamlit as subprocess
+                cmd = [
+                    "streamlit", "run", dashboard_path,
+                    "--server.port", str(port),
+                    "--server.headless", "true",
+                    "--browser.gatherUsageStats", "false",
+                    "--server.address", "localhost"
+                ]
+                
+                # Use CREATE_NO_WINDOW on Windows to hide console
+                startupinfo = None
+                creationflags = 0
+                if os.name == 'nt':
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                    creationflags = subprocess.CREATE_NO_WINDOW
+                
+                self._streamlit_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    startupinfo=startupinfo,
+                    creationflags=creationflags,
+                    cwd=script_dir
+                )
+                
+                # Wait a bit for server to start
+                import time
+                time.sleep(3)
+                
+                url = f"http://localhost:{port}"
+                
+                # Check if process is still running
+                if self._streamlit_process.poll() is None:
+                    self.after(0, lambda: self._on_streamlit_started(url))
+                else:
+                    stderr = self._streamlit_process.stderr.read().decode('utf-8', errors='ignore')
+                    self.after(0, lambda: self._on_streamlit_error(stderr))
+                    
+            except FileNotFoundError:
+                self.after(0, lambda: self._on_streamlit_error("Streamlit chưa được cài đặt. Hãy chạy: pip install streamlit plotly"))
+            except Exception as e:
+                self.after(0, lambda: self._on_streamlit_error(str(e)))
+        
+        # Run in background thread
+        thread = threading.Thread(target=run_streamlit, daemon=True)
+        thread.start()
+    
+    def _on_streamlit_started(self, url):
+        """Callback khi Streamlit đã khởi động."""
+        msg = self.get_translation("web_dashboard_started").format(url=url)
+        self.status_var.set(msg)
+        self.show_toast(msg)
+        logging.info(f"Web Dashboard started at {url}")
+        
+        # Update button state
+        self._update_web_dashboard_buttons()
+        
+        # Open browser
+        webbrowser.open(url)
+    
+    def _on_streamlit_error(self, error):
+        """Callback khi có lỗi khởi động Streamlit."""
+        msg = self.get_translation("web_dashboard_error").format(error=error)
+        self.status_var.set(self.get_translation("status_ready"))
+        messagebox.showerror("Web Dashboard Error", msg)
+        logging.error(f"Web Dashboard error: {error}")
+    
+    def _stop_web_dashboard(self):
+        """Dừng Web Dashboard."""
+        if hasattr(self, '_streamlit_process') and self._streamlit_process:
+            try:
+                self._streamlit_process.terminate()
+                self._streamlit_process.wait(timeout=5)
+            except:
+                self._streamlit_process.kill()
+            finally:
+                self._streamlit_process = None
+                self._streamlit_port = None
+                self.show_toast(self.get_translation("web_dashboard_stopped"))
+                logging.info("Web Dashboard stopped")
+                self._update_web_dashboard_buttons()
+    # === END WEB DASHBOARD ===
+
     def prompt_for_history_export(self):
         dialog = DateRangeDialog(self, title=self.get_translation("menu_export_history"))
         if dialog.result:
@@ -705,6 +896,14 @@ class InventoryApp(ctk.CTk):
     def on_close(self):
         """Xử lý sự kiện đóng ứng dụng một cách an toàn."""
         if messagebox.askokcancel(self.get_translation("confirm_exit_title"), self.get_translation("confirm_exit_msg")):
+            # Stop Web Dashboard if running
+            if hasattr(self, '_streamlit_process') and self._streamlit_process:
+                try:
+                    self._streamlit_process.terminate()
+                    self._streamlit_process.wait(timeout=3)
+                except:
+                    self._streamlit_process.kill()
+            
             save_config(self.config)
             BaseManager.close_connection()
             self.destroy()

@@ -237,7 +237,7 @@ class LoginDialog(ctk.CTkToplevel):
         def do_unlock():
             code = code_entry.get().strip()
             # Mã bảo mật do IT quy định, ví dụ: "ADMIN-2025"
-            SECRET_CODE = "ADMIN-2025"
+            SECRET_CODE = "ADMIN@2026"
             if code == SECRET_CODE:
                 from database.user_repository import UserRepository
                 user_repo = UserRepository()

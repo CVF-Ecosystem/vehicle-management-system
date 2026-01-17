@@ -10,7 +10,7 @@ def get_resource_path(relative_path):
 	return os.path.join(base_path, relative_path)
 
 # --- Cấu hình file ---
-DB_FILE = get_resource_path("vehicle_management_v5.1")
+DB_FILE = get_resource_path("vehicle_management_v5.1.db")
 # Database riêng cho đăng nhập/audit (tách với DB xe)
 # Đặt trong thư mục config để dễ quản lý/backup.
 SECURITY_DB_FILE = get_resource_path("config/security.db")

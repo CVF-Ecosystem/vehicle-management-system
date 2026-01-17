@@ -4,6 +4,7 @@ from tkinter import Menu, Toplevel, Label, messagebox, ttk, Listbox, END
 from tkcalendar import DateEntry
 from datetime import datetime
 from data_normalizer import normalizer
+from translations import translations
 
 
 def harmonize_combobox_style(combo: ctk.CTkComboBox) -> None:
@@ -718,12 +719,19 @@ class BatchLocationDialog(ctk.CTkToplevel):
         
         self.vins = vins
         self.result = None
+        self.auto_assign = False  # Gán tự động từng vị trí cho từng xe
 
         self.title(self.app.get_translation("batch_assign_location"))
-        self.geometry("500x300")
+        self.geometry("650x620")
+        self.resizable(True, True)
+        self.minsize(550, 500)
 
-        info_frame = ctk.CTkFrame(self, fg_color="transparent")
-        info_frame.pack(pady=10, padx=20, fill="x")
+        # === MAIN CONTENT FRAME ===
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        info_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        info_frame.pack(pady=5, fill="x")
         
         count_text = self.app.get_translation("batch_selected_count").format(count=len(vins))
         ctk.CTkLabel(info_frame, text=count_text, font=self.app.font_bold).pack(anchor="w")
@@ -738,43 +746,229 @@ class BatchLocationDialog(ctk.CTkToplevel):
         
         ctk.CTkLabel(vin_frame, text=vin_text, font=self.app.font_normal, justify="left").pack(anchor="w", padx=5, pady=5)
 
-        location_frame = ctk.CTkFrame(self, fg_color="transparent")
-        location_frame.pack(pady=10, padx=20, fill="x")
-
-        ctk.CTkLabel(location_frame, text=self.app.get_translation("lbl_new_location"), font=self.app.font_normal).pack(anchor="w")
+        # === OPTION: Gán tự động hoặc chọn 1 vị trí ===
+        option_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        option_frame.pack(pady=10, fill="x")
         
-        self.location_combo = ctk.CTkComboBox(location_frame, values=[], font=self.app.font_normal, width=400)
-        self.location_combo.pack(fill="x", pady=(5,0))
-        harmonize_combobox_style(self.location_combo)
-        add_right_click_menu(self.app, self.location_combo)
+        self.assign_mode = ctk.StringVar(value="auto")
+        
+        # Radio button: Gán tự động
+        self.radio_auto = ctk.CTkRadioButton(
+            option_frame, 
+            text=self.app.get_translation("batch_auto_assign"),
+            variable=self.assign_mode, 
+            value="auto",
+            font=self.app.font_normal,
+            command=self._on_mode_change
+        )
+        self.radio_auto.pack(anchor="w", pady=2)
+        
+        # Radio button: Chọn 1 vị trí cụ thể
+        self.radio_manual = ctk.CTkRadioButton(
+            option_frame, 
+            text=self.app.get_translation("batch_manual_assign"),
+            variable=self.assign_mode, 
+            value="manual",
+            font=self.app.font_normal,
+            command=self._on_mode_change
+        )
+        self.radio_manual.pack(anchor="w", pady=2)
 
+        # === BLOCK SELECTION FOR AUTO MODE ===
+        self.block_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        self.block_frame.pack(pady=5, fill="x")
+        
+        ctk.CTkLabel(self.block_frame, text="📍 Chọn Khu bắt đầu gán:", font=self.app.font_normal).pack(anchor="w")
+        
+        self.block_var = ctk.StringVar(value="")
+        self.block_menu = ctk.CTkOptionMenu(
+            self.block_frame,
+            variable=self.block_var,
+            values=["Tất cả khu"],
+            font=self.app.font_normal,
+            height=38,
+            dynamic_resizing=False,
+            command=self._on_block_change
+        )
+        self.block_menu.pack(fill="x", pady=(5, 0))
+
+        # === LOCATION SELECTION ===
+        self.location_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        self.location_frame.pack(pady=10, fill="x")
+
+        ctk.CTkLabel(self.location_frame, text="📌 Chọn vị trí bắt đầu:", font=self.app.font_normal).pack(anchor="w")
+        
+        # Sử dụng OptionMenu thay vì ComboBox để dropdown hoạt động tốt hơn
+        self.location_var = ctk.StringVar(value="")
+        self.location_menu = ctk.CTkOptionMenu(
+            self.location_frame, 
+            variable=self.location_var,
+            values=["Đang tải..."],
+            font=self.app.font_normal, 
+            height=38,
+            dynamic_resizing=False
+        )
+        self.location_menu.pack(fill="x", pady=(5,0))
+        
+        # Thông tin vị trí trống
+        self.free_count_label = ctk.CTkLabel(
+            self.location_frame, 
+            text="", 
+            font=self.app.font_small,
+            text_color="gray"
+        )
+        self.free_count_label.pack(anchor="w", pady=(5, 0))
+
+        # === BUTTONS - Đặt ở dưới cùng ===
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=20, padx=20, fill="x")
+        btn_frame.pack(side="bottom", pady=20, padx=30, fill="x")
 
-        ctk.CTkButton(btn_frame, text=self.app.get_translation("btn_confirm"), command=self.on_confirm, font=self.app.font_normal).pack(side="left", expand=True, padx=5)
-        ctk.CTkButton(btn_frame, text=self.app.get_translation("btn_cancel"), command=self.destroy, font=self.app.font_normal).pack(side="right", expand=True, padx=5)
+        ctk.CTkButton(
+            btn_frame, 
+            text="✅ " + self.app.get_translation("btn_confirm"), 
+            command=self.on_confirm, 
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#27ae60",
+            hover_color="#2ecc71",
+            height=45
+        ).pack(side="left", expand=True, fill="x", padx=(0, 10))
+        
+        ctk.CTkButton(
+            btn_frame, 
+            text="❌ " + self.app.get_translation("btn_cancel"), 
+            command=self.destroy, 
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#7f8c8d",
+            hover_color="#95a5a6",
+            height=45
+        ).pack(side="right", expand=True, fill="x", padx=(10, 0))
 
+        self._load_blocks()
         self._load_free_locations()
+        self._on_mode_change()  # Set initial state
+        
+        # Center dialog
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() - self.winfo_width()) // 2
+        y = (self.winfo_screenheight() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
+        
         self.grab_set()
         self.wait_window()
 
+    def _load_blocks(self):
+        """Load danh sách các khu có vị trí trống."""
+        blocks = self.location_manager.get_all_blocks()
+        self.blocks_list = ["Tất cả khu"] + blocks
+        self.block_menu.configure(values=self.blocks_list)
+        self.block_var.set("Tất cả khu")
+
+    def _on_block_change(self, value):
+        """Khi người dùng chọn khu khác."""
+        self._load_free_locations()
+        self._update_info_label()
+
+    def _on_mode_change(self):
+        """Xử lý khi thay đổi chế độ gán."""
+        if self.assign_mode.get() == "auto":
+            # Enable block selection, enable location to choose starting point
+            self.block_menu.configure(state="normal")
+            self.location_menu.configure(state="normal")
+            self._update_info_label()
+        else:
+            # Manual mode - only location selection needed
+            self.block_menu.configure(state="disabled")
+            self.location_menu.configure(state="normal")
+            self.free_count_label.configure(
+                text=f"⚠️ Tất cả {len(self.vins)} xe sẽ được gán vào CÙNG 1 vị trí",
+                text_color="#e67e22"
+            )
+
+    def _update_info_label(self):
+        """Cập nhật thông tin khi ở chế độ auto."""
+        if self.assign_mode.get() == "auto":
+            available = len(self.filtered_locations) if hasattr(self, 'filtered_locations') else 0
+            if available >= len(self.vins):
+                start_loc = self.location_var.get() if self.location_var.get() else "vị trí đầu tiên"
+                self.free_count_label.configure(
+                    text=f"✅ Sẽ gán {len(self.vins)} xe từ [{start_loc}] trở đi ({available} vị trí trống)",
+                    text_color="#27ae60"
+                )
+            else:
+                self.free_count_label.configure(
+                    text=f"⚠️ Chỉ có {available} vị trí trống, không đủ cho {len(self.vins)} xe!",
+                    text_color="#e74c3c"
+                )
+
     def _load_free_locations(self):
-        free_locations = self.location_manager.get_all_free_locations()
-        self.location_map = {loc['full_location_name']: loc['id'] for loc in free_locations}
-        self.location_combo.configure(values=list(self.location_map.keys()))
-        if self.location_map:
-            self.location_combo.set(list(self.location_map.keys())[0])
+        """Load vị trí trống theo khu đã chọn."""
+        selected_block = self.block_var.get()
+        
+        # Lấy tất cả vị trí trống
+        all_free = self.location_manager.get_all_free_locations()
+        
+        # Lọc theo khu nếu không phải "Tất cả khu"
+        if selected_block and selected_block != "Tất cả khu":
+            self.filtered_locations = [loc for loc in all_free if loc['full_location_name'].startswith(selected_block)]
+        else:
+            self.filtered_locations = all_free
+        
+        self.location_map = {loc['full_location_name']: loc['id'] for loc in self.filtered_locations}
+        
+        location_names = list(self.location_map.keys())
+        if location_names:
+            self.location_menu.configure(values=location_names)
+            self.location_var.set(location_names[0])
+        else:
+            self.location_menu.configure(values=["Không có vị trí trống"])
+            self.location_var.set("Không có vị trí trống")
+        
+        self._update_info_label()
 
     def on_confirm(self):
-        selected_location_name = self.location_combo.get()
-        if not selected_location_name:
-            messagebox.showwarning(
-                self.app.get_translation("warn_missing_info"),
-                self.app.get_translation("warn_select_location"),
-                parent=self
-            )
-            return
+        if self.assign_mode.get() == "auto":
+            # Chế độ tự động: gán từ vị trí đã chọn trở đi
+            selected_start = self.location_var.get()
+            if not selected_start or selected_start == "Không có vị trí trống":
+                messagebox.showwarning(
+                    self.app.get_translation("warn_missing_info"),
+                    "Vui lòng chọn vị trí bắt đầu!",
+                    parent=self
+                )
+                return
             
-        self.result = self.location_map.get(selected_location_name)
+            # Tìm index của vị trí bắt đầu
+            start_idx = 0
+            for i, loc in enumerate(self.filtered_locations):
+                if loc['full_location_name'] == selected_start:
+                    start_idx = i
+                    break
+            
+            # Lấy các vị trí từ start_idx trở đi
+            available_from_start = self.filtered_locations[start_idx:]
+            
+            if len(available_from_start) < len(self.vins):
+                messagebox.showwarning(
+                    self.app.get_translation("warn_missing_info"),
+                    f"Không đủ vị trí trống! Từ [{selected_start}] chỉ còn {len(available_from_start)} vị trí, cần {len(self.vins)} vị trí.",
+                    parent=self
+                )
+                return
+            
+            self.result = "auto"
+            self.auto_locations = [loc['id'] for loc in available_from_start[:len(self.vins)]]
+        else:
+            # Chế độ thủ công: trả về 1 location_id
+            selected_location_name = self.location_var.get()
+            if not selected_location_name or selected_location_name == "Không có vị trí trống":
+                messagebox.showwarning(
+                    self.app.get_translation("warn_missing_info"),
+                    self.app.get_translation("warn_select_location"),
+                    parent=self
+                )
+                return
+            self.result = self.location_map.get(selected_location_name)
+            self.auto_locations = None
+        
         self.destroy()
 # === END PHASE 2.3 ===

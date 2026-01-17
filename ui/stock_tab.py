@@ -650,25 +650,44 @@ class StockTab:
             )
             return
         
+        # Lấy danh sách VINs theo thứ tự từ database (theo ID - thứ tự nhập)
+        # Điều này đảm bảo xe được gán theo thứ tự nhất quán
+        ordered_vins = self.vehicle_manager.get_vins_ordered_by_id(list(self.selected_vins))
+        
         # Open location selection dialog
         from ui.components import BatchLocationDialog
         dialog = BatchLocationDialog(
             self.app, 
-            list(self.selected_vins), 
+            ordered_vins,  # Truyền danh sách đã sắp xếp theo thứ tự ID
             self.app.location_manager
         )
         
         if dialog.result:
-            location_id = dialog.result
             success_count = 0
             fail_count = 0
+            vins_list = ordered_vins
             
-            for vin in self.selected_vins:
-                result = self.vehicle_manager.assign_location(vin, location_id)
-                if result.get("success"):
-                    success_count += 1
-                else:
-                    fail_count += 1
+            if dialog.result == "auto" and dialog.auto_locations:
+                # Chế độ tự động: mỗi xe 1 vị trí khác nhau
+                for i, vin in enumerate(vins_list):
+                    if i < len(dialog.auto_locations):
+                        location_id = dialog.auto_locations[i]
+                        result = self.vehicle_manager.swap_vehicle_location(vin, location_id)
+                        if result.get("success"):
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                    else:
+                        fail_count += 1
+            else:
+                # Chế độ thủ công: tất cả xe cùng 1 vị trí
+                location_id = dialog.result
+                for vin in vins_list:
+                    result = self.vehicle_manager.swap_vehicle_location(vin, location_id)
+                    if result.get("success"):
+                        success_count += 1
+                    else:
+                        fail_count += 1
             
             if success_count > 0:
                 self.app.show_toast(

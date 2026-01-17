@@ -37,11 +37,12 @@ class YardMapTab(ctk.CTkFrame):
     }
     
     # Kích thước slot
-    SLOT_WIDTH = 60
-    SLOT_HEIGHT = 30
+    SLOT_WIDTH = 50
+    SLOT_HEIGHT = 28
     SLOT_PADDING = 2
     BLOCK_PADDING = 20
     HEADER_HEIGHT = 25
+    ROW_LABEL_WIDTH = 35  # Chiều rộng label cho dãy
     
     def __init__(self, parent, app, **kwargs):
         super().__init__(parent, **kwargs)
@@ -407,11 +408,11 @@ class YardMapTab(ctk.CTkFrame):
             
             layout = self.blocks_layout[block]
             
-            # Calculate block size
-            rows = sorted(layout['rows'])
-            slots = sorted(layout['slots'])
+            # Calculate block size - thêm label dãy vào chiều rộng
+            rows = sorted(layout['rows'], key=lambda r: int(r) if r.isdigit() else r)
+            slots = sorted(layout['slots'], key=lambda s: int(s) if isinstance(s, (int, str)) and str(s).isdigit() else s)
             
-            block_width = len(slots) * (self.SLOT_WIDTH + self.SLOT_PADDING) + self.BLOCK_PADDING
+            block_width = self.ROW_LABEL_WIDTH + len(slots) * (self.SLOT_WIDTH + self.SLOT_PADDING) + self.BLOCK_PADDING
             block_height = len(rows) * (self.SLOT_HEIGHT + self.SLOT_PADDING) + self.HEADER_HEIGHT + self.BLOCK_PADDING
             
             # Check if block fits in current row
@@ -433,14 +434,16 @@ class YardMapTab(ctk.CTkFrame):
         self.canvas.configure(scrollregion=(0, 0, total_width, total_height))
     
     def _draw_block(self, block: str, x: int, y: int, rows: List, slots: List, status_filter: str):
-        """Vẽ một block."""
-        rows = sorted(rows)
-        slots = sorted(slots)
+        """Vẽ một block - luôn hiển thị dạng grid với dãy (row) theo chiều dọc, vị trí (slot) theo chiều ngang."""
+        # Sắp xếp rows và slots theo số tự nhiên
+        rows = sorted(rows, key=lambda r: int(r) if r.isdigit() else r)
+        slots = sorted(slots, key=lambda s: int(s) if isinstance(s, (int, str)) and str(s).isdigit() else s)
         
-        block_width = len(slots) * (self.SLOT_WIDTH + self.SLOT_PADDING)
+        # Chiều rộng block = label dãy + (số slot * chiều rộng slot)
+        block_width = self.ROW_LABEL_WIDTH + len(slots) * (self.SLOT_WIDTH + self.SLOT_PADDING)
         block_height = len(rows) * (self.SLOT_HEIGHT + self.SLOT_PADDING) + self.HEADER_HEIGHT
         
-        # Draw block header
+        # Draw block header (tên khu)
         self.canvas.create_rectangle(
             x, y, x + block_width, y + self.HEADER_HEIGHT,
             fill=self.COLORS['block_header'],
@@ -448,7 +451,7 @@ class YardMapTab(ctk.CTkFrame):
         )
         self.canvas.create_text(
             x + block_width / 2, y + self.HEADER_HEIGHT / 2,
-            text=f"Block {block}",
+            text=f"Khu {block}",
             font=('Arial', 10, 'bold'),
             fill='white'
         )
@@ -457,6 +460,16 @@ class YardMapTab(ctk.CTkFrame):
         y_start = y + self.HEADER_HEIGHT + self.SLOT_PADDING
         
         for row_idx, row in enumerate(rows):
+            # Draw row label (tên dãy)
+            row_y = y_start + row_idx * (self.SLOT_HEIGHT + self.SLOT_PADDING)
+            self.canvas.create_text(
+                x + self.ROW_LABEL_WIDTH / 2,
+                row_y + self.SLOT_HEIGHT / 2,
+                text=f"{row}",
+                font=('Arial', 8, 'bold'),
+                fill='#555'
+            )
+            
             for slot_idx, slot in enumerate(slots):
                 # Find location
                 location = self._find_location(block, row, slot)
@@ -472,9 +485,9 @@ class YardMapTab(ctk.CTkFrame):
                 if status_filter == self._t('yard_map_status_occupied') and not is_occupied:
                     continue
                 
-                # Calculate slot position
-                slot_x = x + slot_idx * (self.SLOT_WIDTH + self.SLOT_PADDING)
-                slot_y = y_start + row_idx * (self.SLOT_HEIGHT + self.SLOT_PADDING)
+                # Calculate slot position (sau label dãy)
+                slot_x = x + self.ROW_LABEL_WIDTH + slot_idx * (self.SLOT_WIDTH + self.SLOT_PADDING)
+                slot_y = row_y
                 
                 # Draw slot
                 self._draw_slot(loc_id, slot_x, slot_y, is_occupied, location)
@@ -501,8 +514,8 @@ class YardMapTab(ctk.CTkFrame):
             tags=('slot', f'loc_{loc_id}')
         )
         
-        # Draw slot label
-        label = f"{location['row']}-{location['slot']}"
+        # Draw slot label - chỉ hiện số vị trí
+        label = f"{location['slot']}"
         text_id = self.canvas.create_text(
             x + self.SLOT_WIDTH / 2,
             y + self.SLOT_HEIGHT / 2,
@@ -515,10 +528,14 @@ class YardMapTab(ctk.CTkFrame):
         # Store reference
         self.canvas_items[loc_id] = (rect_id, text_id, x, y)
     
-    def _find_location(self, block: str, row: str, slot: str) -> Optional[dict]:
+    def _find_location(self, block: str, row: str, slot) -> Optional[dict]:
         """Tìm location theo block/row/slot."""
+        # Chuyển đổi slot về int để so sánh đúng
+        slot_int = int(slot) if isinstance(slot, str) and slot.isdigit() else slot
+        
         for loc_id, loc in self.locations_data.items():
-            if loc['block'] == block and loc['row'] == row and loc['slot'] == slot:
+            loc_slot = int(loc['slot']) if isinstance(loc['slot'], str) and str(loc['slot']).isdigit() else loc['slot']
+            if loc['block'] == block and loc['row'] == row and loc_slot == slot_int:
                 return loc
         return None
     
@@ -615,10 +632,10 @@ class YardMapTab(ctk.CTkFrame):
         if not loc:
             return
         
-        # Build info text
+        # Build info text - sử dụng tên chuẩn Khu/Dãy/Vị trí
         info_lines = [
             f"📍 {self._t('yard_map_location')}: {loc['full_location_name']}",
-            f"🏗️ Block: {loc['block']} | Row: {loc['row']} | Slot: {loc['slot']}"
+            f"🏗️ Khu: {loc['block']} | Dãy: {loc['row']} | Vị trí: {loc['slot']}"
         ]
         
         vehicle = self.vehicles_data.get(self.selected_location)

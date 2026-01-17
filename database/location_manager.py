@@ -60,20 +60,33 @@ class LocationManager(BaseManager):
             return {"total": 0, "occupied": 0}
 
     def get_all_free_locations(self):
-        """Lấy danh sách tất cả các vị trí còn trống, sắp xếp theo thứ tự logic."""
+        """Lấy danh sách tất cả các vị trí còn trống, sắp xếp theo thứ tự: Khu -> Dãy -> Vị trí."""
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT id, full_location_name FROM locations WHERE is_occupied = 0 ORDER BY block, row, slot")
+            # Sắp xếp theo: block (tên khu), row (số dãy), slot (số vị trí)
+            cur.execute("""
+                SELECT id, full_location_name 
+                FROM locations 
+                WHERE is_occupied = 0 
+                ORDER BY block, CAST(row AS INTEGER), slot
+            """)
             return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy danh sách vị trí trống: {e}")
             return []
 
     def get_next_available_location(self):
-        """Tìm vị trí trống đầu tiên theo thứ tự logic."""
+        """Tìm vị trí trống đầu tiên theo thứ tự: Khu -> Dãy -> Vị trí."""
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT id, full_location_name FROM locations WHERE is_occupied = 0 ORDER BY block, row, slot LIMIT 1")
+            # Sắp xếp theo: block (tên khu), row (số dãy), slot (số vị trí)
+            cur.execute("""
+                SELECT id, full_location_name 
+                FROM locations 
+                WHERE is_occupied = 0 
+                ORDER BY block, CAST(row AS INTEGER), slot
+                LIMIT 1
+            """)
             row = cur.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
@@ -116,3 +129,72 @@ class LocationManager(BaseManager):
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy danh sách blocks: {e}")
             return []
+
+    def get_block_statistics(self, block_name):
+        """Lấy thống kê của một block cụ thể."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN is_occupied = 1 THEN 1 ELSE 0 END) as occupied,
+                    SUM(CASE WHEN is_occupied = 0 THEN 1 ELSE 0 END) as free
+                FROM locations 
+                WHERE block = ?
+            """, (block_name,))
+            row = cur.fetchone()
+            if row:
+                return {
+                    'total': row['total'] or 0,
+                    'occupied': row['occupied'] or 0,
+                    'free': row['free'] or 0
+                }
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi lấy thống kê block '{block_name}': {e}")
+            return None
+
+    def rename_block(self, old_name, new_name):
+        """Đổi tên một block."""
+        try:
+            with self.conn:
+                # Cập nhật tên block
+                self.conn.execute(
+                    "UPDATE locations SET block = ? WHERE block = ?",
+                    (new_name, old_name)
+                )
+                # Cập nhật full_location_name
+                self.conn.execute("""
+                    UPDATE locations 
+                    SET full_location_name = ? || '-' || row || '-' || slot
+                    WHERE block = ?
+                """, (new_name, new_name))
+            logger.info(f"Đã đổi tên block từ '{old_name}' thành '{new_name}'")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi đổi tên block '{old_name}': {e}")
+            return False
+
+    def delete_block(self, block_name):
+        """Xóa một block và tất cả vị trí của nó."""
+        try:
+            with self.conn:
+                # Đầu tiên, xóa liên kết location_id trong vehicles
+                self.conn.execute("""
+                    UPDATE vehicles 
+                    SET location_id = NULL 
+                    WHERE location_id IN (SELECT id FROM locations WHERE block = ?)
+                """, (block_name,))
+                
+                # Xóa các vị trí
+                cur = self.conn.execute(
+                    "DELETE FROM locations WHERE block = ?",
+                    (block_name,)
+                )
+                deleted_count = cur.rowcount
+            
+            logger.info(f"Đã xóa block '{block_name}' với {deleted_count} vị trí")
+            return True, deleted_count
+        except sqlite3.Error as e:
+            logger.error(f"Lỗi khi xóa block '{block_name}': {e}")
+            return False, 0
