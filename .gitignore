@@ -54,7 +54,7 @@ backups/
 config.ini
 config/config.ini
 config_phieuvc_v1.1.ini
-owner_map.json
+# owner_map.json is needed for owner name normalization - keep in repo
 app_log.txt
 
 # Data files (sensitive)

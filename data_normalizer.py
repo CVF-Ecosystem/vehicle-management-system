@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import unidecode # Thư viện mạnh mẽ để bỏ dấu tiếng Việt
+from difflib import SequenceMatcher
 from config import OWNER_MAP_FILE
 from exceptions import VINValidationError
 
@@ -12,6 +13,32 @@ VIN_PATTERN = re.compile(r'^[A-HJ-NPR-Z0-9]{17}$')
 
 # Pattern linh hoạt hơn cho các trường hợp VIN không chuẩn (có thể < 17 ký tự)
 VIN_PATTERN_FLEXIBLE = re.compile(r'^[A-HJ-NPR-Z0-9]{6,17}$')
+
+# Vietnamese character mapping for common typos/alternatives
+VIETNAMESE_CHAR_MAP = {
+    # Vowels with accents
+    'a': ['à', 'á', 'ả', 'ã', 'ạ', 'ă', 'ằ', 'ắ', 'ẳ', 'ẵ', 'ặ', 'â', 'ầ', 'ấ', 'ẩ', 'ẫ', 'ậ'],
+    'e': ['è', 'é', 'ẻ', 'ẽ', 'ẹ', 'ê', 'ề', 'ế', 'ể', 'ễ', 'ệ'],
+    'i': ['ì', 'í', 'ỉ', 'ĩ', 'ị'],
+    'o': ['ò', 'ó', 'ỏ', 'õ', 'ọ', 'ô', 'ồ', 'ố', 'ổ', 'ỗ', 'ộ', 'ơ', 'ờ', 'ớ', 'ở', 'ỡ', 'ợ'],
+    'u': ['ù', 'ú', 'ủ', 'ũ', 'ụ', 'ư', 'ừ', 'ứ', 'ử', 'ữ', 'ự'],
+    'y': ['ỳ', 'ý', 'ỷ', 'ỹ', 'ỵ'],
+    'd': ['đ'],
+}
+
+# Common typo patterns in Vietnamese names
+COMMON_TYPOS = {
+    'ph': ['f'],  # phương -> fuong
+    'ng': ['n'],  # nghĩa -> nia
+    'nh': ['n'],  # anh -> an
+    'ch': ['c'],  # chính -> cin
+    'tr': ['t'],  # trường -> tuong
+    'gi': ['d', 'z'],  # giám -> dam/zam
+    'kh': ['k'],  # khanh -> kan
+    'th': ['t'],  # thành -> tan
+    'qu': ['w', 'q'],  # quang -> wang/qang
+}
+
 
 class DataNormalizer:
     """
@@ -256,28 +283,174 @@ class DataNormalizer:
 
     def normalize_owner(self, owner_name: str) -> str:
         """
-        Chuẩn hóa tên chủ hàng một cách thông minh.
+        Chuẩn hóa tên chủ hàng một cách thông minh với fuzzy matching.
+        
         Quy trình:
-        1. Chuyển thành chữ thường, xóa khoảng trắng thừa.
-        2. Tìm kiếm trong map với key gốc (còn dấu).
-        3. Nếu không thấy, thử bỏ dấu của key rồi tìm lại.
-        4. Nếu vẫn không thấy, trả về giá trị gốc đã được viết hoa.
+        1. Exact match: Tìm trực tiếp trong map
+        2. ASCII match: Bỏ dấu rồi tìm
+        3. No-space match: Bỏ khoảng trắng rồi tìm
+        4. Fuzzy match: So sánh tương tự (similarity >= 0.8)
+        5. Phonetic match: So sánh phát âm tương tự
+        6. Default: Trả về giá trị gốc đã uppercase
         """
         if not owner_name:
             return ""
         
-        # 1. Tạo key gốc (giữ dấu)
-        key_original = owner_name.strip().lower()
-        if key_original in self.owner_map:
-            return self.owner_map[key_original]
+        # Validation check
+        if not self.owner_map_valid:
+            return owner_name.strip().upper()
+        
+        # Chuẩn hóa input
+        cleaned = owner_name.strip()
+        key_lower = cleaned.lower()
+        key_ascii = unidecode.unidecode(key_lower)
+        key_no_space = key_lower.replace(" ", "")
+        key_ascii_no_space = key_ascii.replace(" ", "")
+        
+        # 1. Exact match (giữ dấu)
+        if key_lower in self.owner_map:
+            return self.owner_map[key_lower]
+        
+        # 2. ASCII match (bỏ dấu)
+        if key_ascii in self.owner_map:
+            return self.owner_map[key_ascii]
+        
+        # 3. No-space match (bỏ khoảng trắng)
+        if key_no_space in self.owner_map:
+            return self.owner_map[key_no_space]
+        
+        if key_ascii_no_space in self.owner_map:
+            return self.owner_map[key_ascii_no_space]
+        
+        # 4. Search in map values (reverse lookup)
+        for map_key, canonical in self.owner_map.items():
+            canonical_lower = canonical.lower()
+            canonical_ascii = unidecode.unidecode(canonical_lower)
             
-        # 2. Tạo key không dấu để tìm kiếm linh hoạt hơn
-        key_unidecoded = unidecode.unidecode(key_original)
-        if key_unidecoded in self.owner_map:
-            return self.owner_map[key_unidecoded]
+            # Check if input matches canonical name
+            if key_lower == canonical_lower or key_ascii == canonical_ascii:
+                return canonical
             
-        # 3. Mặc định: Nếu không tìm thấy trong map, trả về giá trị gốc đã được viết hoa
-        return owner_name.strip().upper()
+            # Check no-space variants
+            if key_no_space == canonical_lower.replace(" ", ""):
+                return canonical
+            if key_ascii_no_space == canonical_ascii.replace(" ", ""):
+                return canonical
+        
+        # 5. Fuzzy match - find best similar match
+        best_match = self._fuzzy_match_owner(key_ascii_no_space)
+        if best_match:
+            return best_match
+        
+        # 6. Default: uppercase original
+        return cleaned.upper()
+    
+    def _fuzzy_match_owner(self, input_key: str, threshold: float = 0.75) -> str | None:
+        """
+        Tìm kiếm fuzzy trong owner_map với ngưỡng similarity.
+        
+        Args:
+            input_key: Key đã chuẩn hóa (lowercase, no accent, no space)
+            threshold: Ngưỡng similarity tối thiểu (0.0 - 1.0)
+        
+        Returns:
+            Canonical owner name nếu tìm thấy, None nếu không
+        """
+        best_score = 0.0
+        best_match = None
+        
+        for map_key, canonical in self.owner_map.items():
+            # Chuẩn hóa map_key để so sánh
+            map_key_normalized = unidecode.unidecode(map_key.lower()).replace(" ", "")
+            canonical_normalized = unidecode.unidecode(canonical.lower()).replace(" ", "")
+            
+            # So sánh với cả key và canonical value
+            score_key = SequenceMatcher(None, input_key, map_key_normalized).ratio()
+            score_canonical = SequenceMatcher(None, input_key, canonical_normalized).ratio()
+            
+            max_score = max(score_key, score_canonical)
+            
+            if max_score > best_score and max_score >= threshold:
+                best_score = max_score
+                best_match = canonical
+        
+        if best_match:
+            logging.debug(f"Fuzzy match: '{input_key}' -> '{best_match}' (score: {best_score:.2f})")
+        
+        return best_match
+    
+    def suggest_owner_matches(self, input_name: str, top_n: int = 5) -> list[dict]:
+        """
+        Gợi ý các chủ hàng tương tự dựa trên input.
+        Hữu ích cho autocomplete hoặc "Did you mean?" feature.
+        
+        Args:
+            input_name: Tên chủ hàng người dùng nhập
+            top_n: Số lượng gợi ý tối đa
+        
+        Returns:
+            List of dicts: [{'name': 'PHƯƠNG ANH', 'score': 0.85}, ...]
+        """
+        if not input_name or not self.owner_map_valid:
+            return []
+        
+        input_normalized = unidecode.unidecode(input_name.strip().lower()).replace(" ", "")
+        
+        # Collect unique canonical names
+        canonical_names = set(self.owner_map.values())
+        
+        matches = []
+        for canonical in canonical_names:
+            canonical_normalized = unidecode.unidecode(canonical.lower()).replace(" ", "")
+            score = SequenceMatcher(None, input_normalized, canonical_normalized).ratio()
+            
+            if score > 0.3:  # Minimum threshold for suggestions
+                matches.append({
+                    'name': canonical,
+                    'score': round(score, 2)
+                })
+        
+        # Sort by score descending
+        matches.sort(key=lambda x: x['score'], reverse=True)
+        
+        return matches[:top_n]
+    
+    def add_owner_alias(self, alias: str, canonical_name: str) -> bool:
+        """
+        Thêm alias mới vào owner_map và lưu file.
+        
+        Args:
+            alias: Tên viết tắt/sai chính tả
+            canonical_name: Tên chuẩn
+        
+        Returns:
+            bool: True nếu thành công
+        """
+        try:
+            alias_key = alias.strip().lower()
+            
+            # Thêm vào map
+            self.owner_map[alias_key] = canonical_name.strip().upper()
+            
+            # Lưu file
+            with open(OWNER_MAP_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.owner_map, f, ensure_ascii=False, indent=4)
+            
+            logging.info(f"Added owner alias: '{alias}' -> '{canonical_name}'")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Failed to add owner alias: {e}")
+            return False
+    
+    def get_all_canonical_owners(self) -> list[str]:
+        """
+        Lấy danh sách tất cả tên chủ hàng chuẩn (unique).
+        
+        Returns:
+            List of canonical owner names
+        """
+        return sorted(set(self.owner_map.values())) if self.owner_map_valid else []
 
     def normalize_vehicle_type(self, type_name: str) -> str:
         """

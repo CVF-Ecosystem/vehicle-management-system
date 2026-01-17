@@ -16,10 +16,11 @@ DB_FILE = get_resource_path("vehicle_management_v5.1.db")
 SECURITY_DB_FILE = get_resource_path("config/security.db")
 # Audit logs mặc định ghi vào security DB
 AUDIT_DB_FILE = SECURITY_DB_FILE
-CONFIG_FILE = get_resource_path("config.ini")
+CONFIG_FILE = get_resource_path("config/config.ini")
 LOGS_DIR = get_resource_path("logs")
 ARCHIVES_DIR = get_resource_path("archives")
-OWNER_MAP_FILE = get_resource_path("owner_map.json")
+# Owner name normalization map - chuẩn hóa tên chủ hàng
+OWNER_MAP_FILE = get_resource_path("config/owner_map.json")
 
 # CONFIGURABILITY FIX Issue #15: Configurable backup location
 # Can be overridden via environment variable: BACKUP_DIR

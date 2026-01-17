@@ -1,0 +1,71 @@
+{
+    "_comment": "Owner name normalization map - Chuan hoa ten chu hang",
+    
+    "minh đức": "MINH ĐỨC",
+    "minh duc": "MINH ĐỨC",
+    "minhduc": "MINH ĐỨC",
+    "m.đức": "MINH ĐỨC",
+    "m đức": "MINH ĐỨC",
+    "m duc": "MINH ĐỨC",
+    
+    "phương anh": "PHƯƠNG ANH",
+    "phuong anh": "PHƯƠNG ANH",
+    "phuonganh": "PHƯƠNG ANH",
+    "phuơng anh": "PHƯƠNG ANH",
+    "p.anh": "PHƯƠNG ANH",
+    "p anh": "PHƯƠNG ANH",
+    
+    "tín nghĩa": "TÍN NGHĨA",
+    "tin nghia": "TÍN NGHĨA",
+    "tinnghia": "TÍN NGHĨA",
+    "tin ngia": "TÍN NGHĨA",
+    "t.nghĩa": "TÍN NGHĨA",
+    "t nghia": "TÍN NGHĨA",
+    
+    "trường nam": "TRƯỜNG NAM",
+    "truong nam": "TRƯỜNG NAM",
+    "truongnam": "TRƯỜNG NAM",
+    "t.nam": "TRƯỜNG NAM",
+    "t nam": "TRƯỜNG NAM",
+    
+    "phú sơn": "PHÚ SƠN",
+    "phu son": "PHÚ SƠN",
+    "phuson": "PHÚ SƠN",
+    "p.sơn": "PHÚ SƠN",
+    "p son": "PHÚ SƠN",
+    
+    "phú linh": "PHÚ LINH",
+    "phu linh": "PHÚ LINH",
+    "phulinh": "PHÚ LINH",
+    "p.linh": "PHÚ LINH",
+    "p linh": "PHÚ LINH",
+    
+    "thành đạt": "THÀNH ĐẠT",
+    "thanh dat": "THÀNH ĐẠT",
+    "thanhdat": "THÀNH ĐẠT",
+    "t.đạt": "THÀNH ĐẠT",
+    "t dat": "THÀNH ĐẠT",
+    
+    "hoàng long": "HOÀNG LONG",
+    "hoang long": "HOÀNG LONG",
+    "hoanglong": "HOÀNG LONG",
+    "h.long": "HOÀNG LONG",
+    "h long": "HOÀNG LONG",
+    
+    "việt hưng": "VIỆT HƯNG",
+    "viet hung": "VIỆT HƯNG",
+    "viethung": "VIỆT HƯNG",
+    "v.hưng": "VIỆT HƯNG",
+    "v hung": "VIỆT HƯNG",
+    
+    "kim long": "KIM LONG",
+    "kimlong": "KIM LONG",
+    "k.long": "KIM LONG",
+    "k long": "KIM LONG",
+    
+    "đại phát": "ĐẠI PHÁT",
+    "dai phat": "ĐẠI PHÁT",
+    "daiphat": "ĐẠI PHÁT",
+    "d.phát": "ĐẠI PHÁT",
+    "d phat": "ĐẠI PHÁT"
+}
