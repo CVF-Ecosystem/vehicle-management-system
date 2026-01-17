@@ -44,9 +44,30 @@ logs/*.log
 
 # Legacy DB file (không có extension)
 vehicle_management_v3.0
+vehicle_management_v5.1
+vehicle_management_v5.1.db
 
 # Backup artifacts
 backups/
+
+# Local config files
+config.ini
+config/config.ini
+config_phieuvc_v1.1.ini
+owner_map.json
+app_log.txt
+
+# Data files (sensitive)
+*.xlsx
+*.docx
+CAR DATA.xlsx
+PHIEU VC OTO MAU 2025.docx
+
+# Debug scripts
+check_*.py
+debug_*.py
+test_*.py
+!tests/test_*.py
 
 # Archives data (quá lớn để commit)
 archives/*.db
