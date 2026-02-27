@@ -200,7 +200,7 @@ class PDFReportDialog(ctk.CTkToplevel):
             vehicles = self.app.vehicle_manager.get_all()
             owners = list(set(v.get('owner', '') for v in vehicles if v.get('owner')))
             return sorted(owners)
-        except:
+        except Exception:
             return []
     
     def _on_type_change(self):
@@ -240,7 +240,7 @@ class PDFReportDialog(ctk.CTkToplevel):
         for fmt in ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"]:
             try:
                 return datetime.strptime(date_str.strip(), fmt)
-            except:
+            except ValueError:
                 continue
         return None
     

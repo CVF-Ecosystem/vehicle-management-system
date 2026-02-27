@@ -254,3 +254,88 @@ python -m pytest
 
 - Tích hợp nút export bundle + generate central report ngay trong UI (không cần chạy CLI).
 - Màn hình quản trị người dùng/audit nâng cao (lọc, export log)
+
+---
+
+## Giai đoạn CQ — Code Quality Fixes (⏭ Next)
+
+> **Nguồn gốc:** Kết quả đánh giá chất lượng code ngày 2026-02-27.
+> Tổng điểm hiện tại: **6.7/10**. Mục tiêu sau khi fix: **8.5/10**.
+
+### CQ-1 · Critical Bugs ✅ Đã fix (2026-02-27)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-1.1 | `auth/auth_manager.py` | Dead code `cls._current_user = None` sau `return` | ✅ Đã xóa |
+| CQ-1.2 | `auth/auth_manager.py` | Phương thức `get_user_repository()` định nghĩa 2 lần | ✅ Đã hợp nhất (xóa định nghĩa thừa) |
+| CQ-1.3 | `report_generators/pdf_generator.py` | 8 lệnh `print()` debug trong production code | ✅ Thay bằng `logging.debug()` |
+
+### CQ-2 · Error Handling ✅ Đã fix (2026-02-27)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-2.1 | `main.py` | Bare `except:` khi terminate Streamlit | ✅ Đổi thành `except Exception:` |
+| CQ-2.2 | `report_generators/excel_generator.py` | Bare `except: pass` | ✅ Đổi thành `except (TypeError, AttributeError):` |
+| CQ-2.3 | `ui/components.py` | Bare `except:` trong UI components | ✅ Đổi thành `except Exception:` |
+| CQ-2.4 | `ui/config_dialog.py` | Bare `except: pass` | ✅ Đổi thành `except Exception as e: logging.warning(...)` |
+| CQ-2.5 | `ui/deleted_vehicles_dialog.py` | Bare `except:` trong format date | ✅ Đổi thành `except (ValueError, TypeError):` |
+| CQ-2.6 | `ui/onboarding_dialog.py` | Bare `except:` | ✅ Đổi thành `except Exception:` |
+| CQ-2.7 | `ui/pdf_report_dialog.py` | Bare `except:` | ✅ Đổi thành `except Exception:` / `except ValueError:` |
+| CQ-2.8 | `ui/user_management_dialog.py` | Bare `except:` khi parse datetime | ✅ Đổi thành `except (ValueError, TypeError):` |
+| CQ-2.9 | `ui/yard_map_tab.py` | Bare `except:` | ✅ Đổi thành `except (ValueError, TypeError):` |
+
+> **Tổng cộng:** 18 chỗ dùng bare `except:` đã được sửa.
+
+### CQ-3 · Code Duplication & Initialization (Ưu tiên trung bình)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-3.1 | `main.py` | Font được khởi tạo 2 lần trong `__init__` | ✅ Đã xóa lần khởi tạo đầu (hardcode Arial) |
+| CQ-3.2 | `database/vehicle_manager.py` | `from database.audit_repository import ...` nằm trong hàm — import lặp lại | ✅ Chuyển tất cả lên đầu file |
+| CQ-3.3 | `main.py` | `on_data_changed()` refresh toàn bộ tất cả tabs | ✅ Chỉ refresh stock_tab khi đang active; dropdowns vẫn update nhẹ |
+
+### CQ-4 · Testing Issues (Ưu tiên trung bình)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-4.1 | `tests/conftest.py` | Test data dùng status lowercase `"in_stock"`, `"dispatched"` | ✅ Sửa thành `"IN_STOCK"`, `"SHIPPED"` |
+| CQ-4.2 | `tests/test_full_logic.py` | Không phải pytest test chuẩn | ✅ Tạo `tests/test_logic_pytest.py` với pytest classes + assert chuẩn |
+
+### CQ-5 · Robustness & Edge Cases (Ưu tiên thấp)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-5.1 | `reporting/central_report.py` | Không có guard khi `bundle_ids` rỗng | ✅ Thêm guard `if not bundle_ids: raise ValueError(...)` |
+| CQ-5.2 | `auth/auth_manager.py` | `refresh_session()` không được gọi tự động | ✅ Gọi trong `on_tab_change()` và `on_data_changed()` |
+| CQ-5.3 | `main.py` | `time.sleep(3)` cứng nhắc khi chờ Streamlit | ✅ Thay bằng polling loop kiểm tra port (tối đa 10 giây) |
+| CQ-5.4 | `config.py` | `APP_VERSION` không theo SemVer | ✅ Đổi thành `"1.0.0"`, thêm `APP_VERSION_DISPLAY` |
+| CQ-5.5 | `main.py` | `menu_font = ("Arial", 12)` hardcode font | ✅ Dùng `(FONT_FAMILY, FONT_SIZE_SMALL)` từ `config.py` |
+
+### CQ-6 · Thread Safety (Ưu tiên thấp)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-6.1 | `database/user_repository.py` | `check_same_thread=False` nhưng không có mutex | ✅ Thêm `threading.Lock()` bảo vệ create/update/delete/change_password |
+
+---
+
+### Tóm tắt tiến độ (2026-02-27) — ✅ HOÀN THÀNH TẤT CẢ
+
+- **Đã fix:** CQ-1.1, CQ-1.2, CQ-1.3, CQ-2.1~2.9 (18 bare except), CQ-3.1, CQ-3.2, CQ-3.3, CQ-4.1, CQ-4.2, CQ-5.1, CQ-5.2, CQ-5.3, CQ-5.4, CQ-5.5, CQ-6.1
+- **Tổng:** 16/16 mục đã hoàn thành
+
+### Tiêu chí hoàn thành
+
+- [x] CQ-1: Không còn dead code, không còn duplicate method
+- [x] CQ-2: `grep -r "except:" --include="*.py"` trả về 0 kết quả trong source code (ngoài tests)
+- [x] CQ-3.1: `__init__` của `InventoryApp` không còn khởi tạo font 2 lần
+- [x] CQ-3.2: Tất cả import audit_repository đã ở đầu file
+- [x] CQ-3.3: `on_data_changed()` chỉ refresh stock_tab khi đang active
+- [x] CQ-4.1: Test data dùng đúng status constants
+- [x] CQ-4.2: `tests/test_logic_pytest.py` với pytest classes + assert chuẩn
+- [x] CQ-5.1: `central_report.py` có guard cho `bundle_ids` rỗng
+- [x] CQ-5.2: `refresh_session()` được gọi trong `on_tab_change()` và `on_data_changed()`
+- [x] CQ-5.3: Polling loop thay `time.sleep(3)` khi chờ Streamlit
+- [x] CQ-5.4: `APP_VERSION` theo SemVer (`1.0.0`)
+- [x] CQ-5.5: Menu font dùng `FONT_FAMILY` constant
+- [x] CQ-6.1: `threading.Lock()` bảo vệ write ops trong `user_repository.py`

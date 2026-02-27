@@ -34,7 +34,7 @@ def _format_excel_sheet(worksheet, has_total_row=False):
             try:
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-            except:
+            except (TypeError, AttributeError):
                 pass
         adjusted_width = (max_length + 2)
         worksheet.column_dimensions[column_letter].width = adjusted_width

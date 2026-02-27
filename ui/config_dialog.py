@@ -8,6 +8,7 @@ Dialog cho phép xuất/nhập cấu hình ứng dụng.
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import json
+import logging
 import os
 from datetime import datetime
 
@@ -145,8 +146,8 @@ class ConfigDialog(ctk.CTkToplevel):
                     "enabled": settings.get("enabled", True),
                     "long_stock_days": settings.get("long_stock_days", 30),
                 }
-        except:
-            pass
+        except Exception as e:
+            logging.warning(f"Không thể lấy cài đặt thông báo: {e}")
         return {"enabled": True, "long_stock_days": 30}
     
     def _export_config(self):
@@ -263,8 +264,8 @@ class ConfigDialog(ctk.CTkToplevel):
                     enabled=notif_settings.get("enabled", True),
                     long_stock_days=notif_settings.get("long_stock_days", 30)
                 )
-        except:
-            pass
+        except Exception as e:
+            logging.warning(f"Không thể áp dụng cài đặt thông báo: {e}")
     
     def _reset_config(self):
         """Reset về cấu hình mặc định."""

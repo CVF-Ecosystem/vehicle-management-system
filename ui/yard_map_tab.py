@@ -655,7 +655,7 @@ class YardMapTab(ctk.CTkFrame):
                     else:
                         dt = datetime.strptime(date_in, '%Y-%m-%d %H:%M:%S')
                     date_in = dt.strftime('%d/%m/%Y %H:%M')
-                except:
+                except (ValueError, TypeError):
                     pass
             info_lines.append(f"📅 {self._t('tree_date_in')}: {date_in}")
         else:

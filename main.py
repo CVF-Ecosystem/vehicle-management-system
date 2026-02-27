@@ -78,10 +78,6 @@ class InventoryApp(ctk.CTk):
 
         ctk.set_appearance_mode(self.current_theme.get())
 
-        self.font_normal = ctk.CTkFont(family="Arial", size=14)
-        self.font_bold = ctk.CTkFont(family="Arial", size=14, weight="bold")
-        self.font_small_italic = ctk.CTkFont(family="Arial", size=12, slant="italic")
-
         self.vehicle_manager = VehicleManager()
         self.entity_manager = EntityManager()
         self.dispatch_manager = DispatchManager()
@@ -174,7 +170,7 @@ class InventoryApp(ctk.CTk):
         
     def _build_menu(self):
         self.main_menu = Menu(self)
-        menu_font = ("Arial", 12)
+        menu_font = (FONT_FAMILY, FONT_SIZE_SMALL)
         self.file_menu = Menu(self.main_menu, tearoff=0, font=menu_font)
         self.tools_menu = Menu(self.main_menu, tearoff=0, font=menu_font)
         self.settings_menu = Menu(self.main_menu, tearoff=0, font=menu_font)
@@ -406,6 +402,10 @@ class InventoryApp(ctk.CTk):
 
     def on_tab_change(self):
         """Xử lý sự kiện khi người dùng chuyển tab (Lazy Loading)."""
+        # Refresh session khi user tương tác (CQ-5.2)
+        if hasattr(self, 'auth_manager'):
+            self.auth_manager.refresh_session()
+        
         selected_tab_name = self.tabs.get()
         
         # Chỉ tải dữ liệu khi tab được chọn
@@ -423,16 +423,33 @@ class InventoryApp(ctk.CTk):
             pass
 
     def on_data_changed(self):
-        """Hàm điều phối làm mới giao diện khi có thay đổi dữ liệu."""
-        logging.info("Phát hiện thay đổi dữ liệu, đang làm mới các thành phần liên quan.")
-        if hasattr(self, 'stock_tab'):
-            self.stock_tab.refresh_all()
+        """Hàm điều phối làm mới giao diện khi có thay đổi dữ liệu.
+        
+        Chỉ refresh tab đang active để tránh lãng phí tài nguyên.
+        Các tab khác sẽ được lazy-load khi người dùng chuyển sang.
+        """
+        logging.info("Phát hiện thay đổi dữ liệu, đang làm mới tab hiện tại.")
+        # Refresh session khi user có hoạt động (CQ-5.2)
+        if hasattr(self, 'auth_manager'):
+            self.auth_manager.refresh_session()
+        
+        # Luôn cập nhật dropdowns cho inbound/outbound/dispatch (nhẹ, không query nhiều)
         if hasattr(self, 'inbound_tab'):
             self.inbound_tab.update_dropdowns()
         if hasattr(self, 'outbound_tab'):
             self.outbound_tab.update_dropdowns()
         if hasattr(self, 'dispatch_tab'):
             self.dispatch_tab.update_dropdowns()
+        
+        # Chỉ refresh stock_tab nếu đang active (tránh query nặng khi không cần)
+        if hasattr(self, 'tabs') and hasattr(self, 'stock_tab'):
+            try:
+                active_tab = self.tabs.get()
+                if active_tab == self.get_translation("tab_stock"):
+                    self.stock_tab.refresh_all()
+            except Exception:
+                # Fallback: refresh nếu không xác định được tab active
+                self.stock_tab.refresh_all()
 
     def center_window(self):
         """Căn giữa cửa sổ ứng dụng khi khởi động."""
@@ -806,18 +823,36 @@ class InventoryApp(ctk.CTk):
                     cwd=script_dir
                 )
                 
-                # Wait a bit for server to start
-                import time
-                time.sleep(3)
-                
                 url = f"http://localhost:{port}"
                 
-                # Check if process is still running
-                if self._streamlit_process.poll() is None:
+                # Poll until server is ready (max 10 seconds) instead of fixed sleep
+                import time
+                max_wait = 10
+                poll_interval = 0.5
+                elapsed = 0
+                server_ready = False
+                while elapsed < max_wait:
+                    # Check if process crashed
+                    if self._streamlit_process.poll() is not None:
+                        break
+                    # Try connecting to the port
+                    try:
+                        with socket.create_connection(("localhost", port), timeout=0.5):
+                            server_ready = True
+                            break
+                    except OSError:
+                        pass
+                    time.sleep(poll_interval)
+                    elapsed += poll_interval
+                
+                if server_ready:
                     self.after(0, lambda: self._on_streamlit_started(url))
-                else:
+                elif self._streamlit_process.poll() is not None:
                     stderr = self._streamlit_process.stderr.read().decode('utf-8', errors='ignore')
                     self.after(0, lambda: self._on_streamlit_error(stderr))
+                else:
+                    # Timeout but process still running — assume it started
+                    self.after(0, lambda: self._on_streamlit_started(url))
                     
             except FileNotFoundError:
                 self.after(0, lambda: self._on_streamlit_error("Streamlit chưa được cài đặt. Hãy chạy: pip install streamlit plotly"))
@@ -854,7 +889,7 @@ class InventoryApp(ctk.CTk):
             try:
                 self._streamlit_process.terminate()
                 self._streamlit_process.wait(timeout=5)
-            except:
+            except Exception:
                 self._streamlit_process.kill()
             finally:
                 self._streamlit_process = None
@@ -901,7 +936,7 @@ class InventoryApp(ctk.CTk):
                 try:
                     self._streamlit_process.terminate()
                     self._streamlit_process.wait(timeout=3)
-                except:
+                except Exception:
                     self._streamlit_process.kill()
             
             save_config(self.config)

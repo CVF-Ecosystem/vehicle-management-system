@@ -257,7 +257,7 @@ class OnboardingDialog(ctk.CTkToplevel):
         if self.dont_show_var.get():
             try:
                 self.app.config.set("Settings", "show_onboarding", "false")
-            except:
+            except Exception:
                 pass
         
         if self.on_complete:
@@ -271,5 +271,5 @@ def should_show_onboarding(app):
     try:
         show = app.config.get("Settings", "show_onboarding", fallback="true")
         return show.lower() == "true"
-    except:
+    except Exception:
         return True

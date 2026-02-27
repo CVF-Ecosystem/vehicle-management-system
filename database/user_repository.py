@@ -13,6 +13,7 @@ import logging
 import hashlib
 import secrets
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
@@ -48,6 +49,8 @@ class UserRepository:
 
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # Thread lock để bảo vệ write operations (CQ-6.1)
+        self._write_lock = threading.Lock()
         self._ensure_schema()
         self._ensure_default_admin()
 
@@ -234,24 +237,24 @@ class UserRepository:
         # Hash password
         password_hash, _ = self._hash_password(password)
         
-        # Insert user
+        # Insert user (thread-safe write)
         try:
-            cursor.execute("""
-                INSERT INTO users (username, password_hash, full_name, role, is_active, created_at, created_by)
-                VALUES (?, ?, ?, ?, 1, ?, ?)
-            """, (
-                username,
-                password_hash,
-                full_name,
-                role,
-                datetime.now().isoformat(),
-                created_by_id
-            ))
-            self.conn.commit()
+            with self._write_lock:
+                cursor.execute("""
+                    INSERT INTO users (username, password_hash, full_name, role, is_active, created_at, created_by)
+                    VALUES (?, ?, ?, ?, 1, ?, ?)
+                """, (
+                    username,
+                    password_hash,
+                    full_name,
+                    role,
+                    datetime.now().isoformat(),
+                    created_by_id
+                ))
+                self.conn.commit()
+                user_id = cursor.lastrowid
             
-            user_id = cursor.lastrowid
             logger.info(f"Đã tạo user: {username} (ID: {user_id}, Role: {role})")
-            
             return {"success": True, "message": "Tạo user thành công", "user_id": user_id}
             
         except Exception as e:
@@ -338,11 +341,12 @@ class UserRepository:
         params.append(user_id)
         
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(f"""
-                UPDATE users SET {', '.join(updates)} WHERE id = ?
-            """, params)
-            self.conn.commit()
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(f"""
+                    UPDATE users SET {', '.join(updates)} WHERE id = ?
+                """, params)
+                self.conn.commit()
             
             logger.info(f"Đã cập nhật user ID {user_id}")
             return {"success": True, "message": "Cập nhật thành công"}
@@ -359,12 +363,13 @@ class UserRepository:
         password_hash, _ = self._hash_password(new_password)
         
         try:
-            cursor = self.conn.cursor()
-            cursor.execute("""
-                UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL
-                WHERE id = ?
-            """, (password_hash, user_id))
-            self.conn.commit()
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute("""
+                    UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL
+                    WHERE id = ?
+                """, (password_hash, user_id))
+                self.conn.commit()
             
             logger.info(f"Đã đổi mật khẩu cho user ID {user_id}")
             return {"success": True, "message": "Đổi mật khẩu thành công"}
@@ -383,9 +388,10 @@ class UserRepository:
             return {"success": False, "message": "Không thể xóa tài khoản admin mặc định"}
         
         try:
-            cursor = self.conn.cursor()
-            cursor.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
-            self.conn.commit()
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+                self.conn.commit()
             
             logger.info(f"Đã vô hiệu hóa user ID {user_id}")
             return {"success": True, "message": "Đã vô hiệu hóa user"}

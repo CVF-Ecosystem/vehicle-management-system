@@ -214,7 +214,8 @@ def sample_db(tmp_path):
     # Create vehicles with different statuses
     owners = ["THACO", "TOYOTA VN", "HYUNDAI VN", "FORD VN", "HONDA VN"]
     vehicle_types = ["Sedan", "SUV", "Pickup", "Hatchback", "MPV"]
-    statuses = ["in_stock", "in_stock", "in_stock", "dispatched", "archived"]  # Distribution
+    # Use correct status constants matching config.py: STATUS_IN_STOCK="IN_STOCK", STATUS_SHIPPED="SHIPPED"
+    statuses = ["IN_STOCK", "IN_STOCK", "IN_STOCK", "SHIPPED", "SHIPPED"]  # Distribution
     
     base_date = datetime.now() - timedelta(days=30)
     
@@ -233,14 +234,12 @@ def sample_db(tmp_path):
         dispatch_id = None
         location_id = None
         
-        if status == "in_stock":
+        if status == "IN_STOCK":
             # Assign a location
             available_loc = random.choice(test_data["locations"])
             location_id = available_loc["id"]
-        elif status == "dispatched":
+        elif status == "SHIPPED":
             date_out = (datetime.strptime(date_in, "%Y-%m-%d") + timedelta(days=random.randint(1, 5))).strftime("%Y-%m-%d")
-        elif status == "archived":
-            date_out = (datetime.strptime(date_in, "%Y-%m-%d") + timedelta(days=random.randint(1, 10))).strftime("%Y-%m-%d")
         
         cursor.execute("""
             INSERT INTO vehicles (vin, owner, vehicle_type, status, date_in, date_out, location_id)
@@ -260,9 +259,8 @@ def sample_db(tmp_path):
     # Summary
     summary = {
         "total_vehicles": len(test_data["vehicles"]),
-        "in_stock": len([v for v in test_data["vehicles"] if v["status"] == "in_stock"]),
-        "dispatched": len([v for v in test_data["vehicles"] if v["status"] == "dispatched"]),
-        "archived": len([v for v in test_data["vehicles"] if v["status"] == "archived"]),
+        "in_stock": len([v for v in test_data["vehicles"] if v["status"] == "IN_STOCK"]),
+        "shipped": len([v for v in test_data["vehicles"] if v["status"] == "SHIPPED"]),
         "locations": len(test_data["locations"]),
         "drivers": len(test_data["drivers"]),
     }

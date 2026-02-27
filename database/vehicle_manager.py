@@ -10,6 +10,7 @@ from .location_manager import LocationManager
 from config import DB_FILE, ARCHIVES_DIR, STATUS_IN_STOCK, STATUS_SHIPPED
 from data_normalizer import validate_vin, normalize_vin, normalize_owner, normalize_vehicle_type
 from exceptions import ValidationError, VINValidationError, DateValidationError, RequiredFieldError
+from database.audit_repository import log_create, log_update, log_delete, log_audit, AuditAction
 
 class VehicleManager(BaseManager):
     def clear_archived_deleted_vehicles(self):
@@ -167,8 +168,6 @@ class VehicleManager(BaseManager):
                 )
 
             try:
-                from database.audit_repository import log_create
-
                 log_create(
                     table_name="vehicles",
                     record_id=normalized_vin,
@@ -239,8 +238,6 @@ class VehicleManager(BaseManager):
                 
                 if cur.rowcount > 0:
                     try:
-                        from database.audit_repository import log_update
-
                         log_update(
                             table_name="vehicles",
                             record_id=vin,
@@ -524,8 +521,6 @@ class VehicleManager(BaseManager):
                 self.conn.execute("UPDATE vehicles SET owner = ?, vehicle_type = ? WHERE vin = ? AND is_active = 1", (owner, vehicle_type, vin))
 
             try:
-                from database.audit_repository import log_update
-
                 log_update(
                     table_name="vehicles",
                     record_id=str(vin),
@@ -564,8 +559,6 @@ class VehicleManager(BaseManager):
             self.commit_transaction()
 
             try:
-                from database.audit_repository import log_update
-
                 log_update(
                     table_name="vehicles",
                     record_id=str(old_vin),
@@ -636,8 +629,6 @@ class VehicleManager(BaseManager):
                 logger.info(f"Soft deleted vehicle {vin} by {deleted_by}. Reason: {delete_reason}")
 
                 try:
-                    from database.audit_repository import log_audit, AuditAction
-
                     log_audit(
                         action=AuditAction.DELETE,
                         table_name="vehicles",
@@ -710,8 +701,6 @@ class VehicleManager(BaseManager):
                 logger.info(f"Restored vehicle {vin} by {restored_by}")
 
                 try:
-                    from database.audit_repository import log_audit, AuditAction
-
                     log_audit(
                         action=AuditAction.UPDATE,
                         table_name="vehicles",
@@ -861,8 +850,6 @@ class VehicleManager(BaseManager):
             logger.info(f"Hard deleted vehicle {vin} by {deleted_by}. Archived to deleted_vehicles_archive.")
 
             try:
-                from database.audit_repository import log_audit, AuditAction
-
                 log_audit(
                     action=AuditAction.DELETE,
                     table_name="vehicles",
@@ -987,8 +974,6 @@ class VehicleManager(BaseManager):
                 self.location_manager.set_location_occupied(old_location_id, False)
 
             try:
-                from database.audit_repository import log_update
-
                 log_update(
                     table_name="vehicles",
                     record_id=vin,
@@ -1060,8 +1045,6 @@ class VehicleManager(BaseManager):
             logger.info(f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi vào file: {archive_db_path}")
 
             try:
-                from database.audit_repository import log_audit, AuditAction
-
                 log_audit(
                     action=AuditAction.ARCHIVE,
                     table_name="vehicles",

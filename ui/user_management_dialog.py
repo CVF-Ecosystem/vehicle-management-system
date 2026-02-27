@@ -218,7 +218,7 @@ class UserManagementDialog(ctk.CTkToplevel):
                 try:
                     dt = datetime.fromisoformat(last_login)
                     last_login_text = dt.strftime("%d/%m/%Y %H:%M")
-                except:
+                except (ValueError, TypeError):
                     last_login_text = last_login
             else:
                 last_login_text = self._t("user_mgmt_never_logged_in")
@@ -626,7 +626,7 @@ class LoginHistoryDialog(ctk.CTkToplevel):
             try:
                 dt = datetime.fromisoformat(created_at)
                 time_text = dt.strftime("%d/%m/%Y %H:%M:%S")
-            except:
+            except (ValueError, TypeError):
                 time_text = created_at
             
             ctk.CTkLabel(row, text=time_text, width=150).pack(side="left", padx=5)

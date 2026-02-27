@@ -58,11 +58,6 @@ class AuthManager:
         """Reset instance (dùng cho testing)."""
         cls._instance = None
     
-    def get_user_repository(self) -> UserRepository:
-        """Trả về UserRepository instance."""
-        return self._user_repository
-        cls._current_user = None
-    
     # ==================== Authentication ====================
     
     def login(self, username: str, password: str) -> Dict[str, Any]:
