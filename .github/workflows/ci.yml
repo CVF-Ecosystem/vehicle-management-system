@@ -9,7 +9,11 @@ permissions:
   contents: read
 
 jobs:
-  tests:
+  # ============================================================
+  # Job 1: Lint & Code Quality
+  # ============================================================
+  lint:
+    name: Lint & Code Quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,6 +25,40 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Install lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Run ruff linter
+        run: |
+          ruff check . --output-format=github
+
+      - name: Run ruff formatter check
+        run: |
+          ruff format --check .
+
+  # ============================================================
+  # Job 2: Tests with Coverage
+  # ============================================================
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -30,9 +68,59 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest-cov
 
-      - name: Run tests
+      - name: Run tests with coverage
         env:
           PYTHONIOENCODING: "UTF-8"
         run: |
-          pytest --tb=short
+          pytest --tb=short \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-omit="tests/*,tao_phieu_v1.2.py,web_dashboard.py" \
+            -v
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.11'
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  # ============================================================
+  # Job 3: Security Scan
+  # ============================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety
+
+      - name: Run bandit security scan
+        run: |
+          bandit -r . \
+            --exclude ./tests,./tao_phieu_v1.2.py \
+            -ll \
+            -f json \
+            -o bandit-report.json || true
+          bandit -r . \
+            --exclude ./tests,./tao_phieu_v1.2.py \
+            -ll
+
+      - name: Check dependencies for known vulnerabilities
+        run: |
+          pip install -r requirements.txt
+          safety check --json || true

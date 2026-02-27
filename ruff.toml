@@ -1,0 +1,74 @@
+# ruff.toml — Cấu hình Ruff linter cho Vehicle Management System
+# Docs: https://docs.astral.sh/ruff/configuration/
+
+# Target Python version
+target-version = "py311"
+
+# Line length
+line-length = 120
+
+# Files/directories to exclude
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "*.egg-info",
+    "build",
+    "dist",
+    "tao_phieu_v1.2.py",  # Legacy file, không cần lint
+]
+
+[lint]
+# Enable rules
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # Ruff-specific rules
+]
+
+# Disable specific rules that conflict with project style
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function calls in default arguments
+    "B904",   # Within an except clause, raise exceptions with `raise ... from err`
+    "SIM108", # Use ternary operator (sometimes less readable)
+    "UP007",  # Use X | Y for union type annotations (Python 3.10+)
+    "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Per-file ignores
+[lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # Use of assert detected (OK in tests)
+    "S106",   # Possible hardcoded password (OK in tests)
+    "F841",   # Local variable is assigned to but never used
+]
+"tools/*" = [
+    "T201",   # print() found (OK in CLI tools)
+]
+"config.py" = [
+    "E501",   # Long lines OK in config
+]
+
+[lint.isort]
+known-first-party = ["config", "utils", "exceptions", "data_normalizer", "translations"]
+known-third-party = ["customtkinter", "tkinter", "sqlite3", "pandas", "openpyxl"]
+
+[format]
+# Use double quotes
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+# Respect magic trailing comma
+magic-trailing-comma = true

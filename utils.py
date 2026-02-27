@@ -3,15 +3,15 @@ import logging
 from logging.handlers import RotatingFileHandler
 import configparser
 import os
-import json
 from datetime import datetime
 from uuid import uuid4
+from typing import Optional
 from config import CONFIG_FILE, LOGS_DIR, OWNER_MAP_FILE
 
 # Module-level logger
 logger = logging.getLogger(__name__)
 
-def setup_logging(gui_handler=None, log_level=logging.INFO):
+def setup_logging(gui_handler: Optional[logging.Handler] = None, log_level: int = logging.INFO) -> None:
     """
     Thiết lập hệ thống logging chuẩn hóa.
     
@@ -77,7 +77,7 @@ def get_logger(name: str) -> logging.Logger:
     """
     return logging.getLogger(name)
 
-def load_config():
+def load_config() -> configparser.ConfigParser:
     """Đọc file cấu hình .ini hoặc tạo mới nếu chưa có."""
     config = configparser.ConfigParser()
     if not os.path.exists(CONFIG_FILE):
@@ -102,7 +102,7 @@ def load_config():
             
     return config
 
-def save_config(config):
+def save_config(config: configparser.ConfigParser) -> None:
     """Lưu lại các thay đổi vào file cấu hình .ini."""
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         config.write(f)

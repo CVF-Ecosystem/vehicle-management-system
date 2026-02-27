@@ -37,6 +37,40 @@ MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 PASSWORD_MIN_LENGTH = 6
 
+# Rate limiting settings (7.3-SEC-2)
+# Giới hạn số lần thử đăng nhập trong một khoảng thời gian ngắn
+RATE_LIMIT_WINDOW_SECONDS = 60   # Cửa sổ thời gian (giây)
+RATE_LIMIT_MAX_ATTEMPTS = 10     # Tối đa N lần thử trong cửa sổ thời gian
+
+# In-memory rate limit tracker: {username: [(timestamp, ...), ...]}
+_rate_limit_tracker: dict = {}
+_rate_limit_lock = threading.Lock()
+
+
+def _check_rate_limit(username: str) -> bool:
+    """
+    Kiểm tra rate limit cho username.
+    
+    Returns:
+        True nếu được phép (chưa vượt giới hạn), False nếu bị chặn.
+    """
+    import time
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    
+    with _rate_limit_lock:
+        attempts = _rate_limit_tracker.get(username, [])
+        # Xóa các attempt cũ ngoài cửa sổ thời gian
+        attempts = [t for t in attempts if t > window_start]
+        
+        if len(attempts) >= RATE_LIMIT_MAX_ATTEMPTS:
+            _rate_limit_tracker[username] = attempts
+            return False  # Bị chặn
+        
+        attempts.append(now)
+        _rate_limit_tracker[username] = attempts
+        return True  # Được phép
+
 
 class UserRepository:
     """
@@ -413,6 +447,16 @@ class UserRepository:
         Returns:
             dict: {"success": bool, "message": str, "user": dict or None}
         """
+        # Rate limiting check (7.3-SEC-2)
+        if not _check_rate_limit(username):
+            logger.warning(f"Rate limit exceeded for username: {username}")
+            self._log_login_attempt(None, username, False, "Rate limit exceeded")
+            return {
+                "success": False,
+                "message": f"Quá nhiều lần thử đăng nhập. Vui lòng đợi {RATE_LIMIT_WINDOW_SECONDS} giây.",
+                "user": None
+            }
+        
         user = self.get_user_by_username(username)
         
         if not user:

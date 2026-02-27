@@ -4,10 +4,6 @@ from tkinter import messagebox, Menu, filedialog
 from datetime import datetime
 import logging
 import os
-import subprocess
-import webbrowser
-import threading
-import socket
 
 import utils
 from utils import setup_logging, load_config, save_config
@@ -50,27 +46,22 @@ from ui.user_management_dialog import UserManagementDialog, LoginHistoryDialog
 from core.notification_service import NotificationService, get_notification_service
 from ui.notification_panel import NotificationPanel, NotificationBell, NotificationSettingsDialog
 
+# 7.1-ARCH-1: Web Dashboard Manager (tách từ main.py)
+from ui.web_dashboard_manager import WebDashboardManager
+
+# 7.6-DEPLOY-1: Auto-update checker
+from core.update_checker import check_for_updates
+
 
 class InventoryApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         setup_logging()
 
-        # --- UNLOCK ADMIN nếu có file unlock.txt ---
-        try:
-            unlock_path = os.path.join(os.getcwd(), "unlock.txt")
-            if os.path.exists(unlock_path):
-                from database.user_repository import UserRepository
-                user_repo = UserRepository()
-                admin = user_repo.get_user_by_username("admin")
-                if admin:
-                    user_repo.change_password(admin['id'], "admin123")
-                    user_repo._reset_failed_attempts(admin['id'])
-                    user_repo.update_user(admin['id'], is_active=True)
-                    logging.warning("Đã mở khóa và reset mật khẩu admin do phát hiện unlock.txt!")
-                os.remove(unlock_path)
-        except Exception as e:
-            logging.error(f"Lỗi khi xử lý unlock.txt: {e}")
+        # SECURITY NOTE (7.3-SEC-1): Cơ chế unlock.txt đã bị xóa vì lý do bảo mật.
+        # Cơ chế này cho phép bất kỳ ai có quyền ghi file vào thư mục ứng dụng
+        # đều có thể reset mật khẩu admin — đây là backdoor không an toàn.
+        # Để reset admin, hãy dùng script tools/reset_admin.py hoặc liên hệ quản trị viên.
 
         self.config = load_config()
         self.current_lang = ctk.StringVar(value=self.config.get("Settings", "language", fallback="vi"))
@@ -131,6 +122,12 @@ class InventoryApp(ctk.CTk):
         
         # === PHASE 2.6: Start notification checks ===
         self._setup_notification_checks()
+        
+        # 7.1-ARCH-1: Initialize Web Dashboard Manager
+        self._web_dashboard = WebDashboardManager(self)
+        
+        # 7.6-DEPLOY-1: Check for updates in background (after 10 seconds)
+        self.after(10000, self._check_for_updates)
         
         logging.info(f"Ứng dụng {APP_VERSION} đã khởi động thành công.")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -311,23 +308,9 @@ class InventoryApp(ctk.CTk):
         # Không pack ngay, chỉ hiện khi dashboard đang chạy
         
     def _update_web_dashboard_buttons(self):
-        """Cập nhật trạng thái nút Web Dashboard."""
-        is_running = hasattr(self, '_streamlit_process') and self._streamlit_process and self._streamlit_process.poll() is None
-        
-        if is_running:
-            self.web_dashboard_btn.configure(
-                text="🌐 Mở Dashboard",
-                fg_color="#27ae60",
-                hover_color="#2ecc71"
-            )
-            self.web_stop_btn.pack(pady=(0, 5))
-        else:
-            self.web_dashboard_btn.configure(
-                text="🌐 Web Dashboard",
-                fg_color="#2980b9",
-                hover_color="#3498db"
-            )
-            self.web_stop_btn.pack_forget()
+        """Cập nhật trạng thái nút Web Dashboard — delegate to WebDashboardManager."""
+        if hasattr(self, '_web_dashboard'):
+            self._web_dashboard._update_buttons()
 
     def _build_status_bar(self):
         """Xây dựng thanh trạng thái ở dưới cùng cửa sổ."""
@@ -476,6 +459,19 @@ class InventoryApp(ctk.CTk):
         if self.notification_panel.service.get_unread():
             self.notification_panel.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-40)
     
+    def _check_for_updates(self):
+        """Kiểm tra phiên bản mới từ GitHub (7.6-DEPLOY-1)."""
+        def on_update_result(info):
+            if info and info.get("is_newer"):
+                new_version = info.get("version", "")
+                url = info.get("url", "")
+                msg = f"🆕 Phiên bản mới {new_version} đã có!\nTải về: {url}"
+                # Show as notification (non-blocking)
+                self.after(0, lambda: self.show_toast(msg))
+                logging.info(f"Update available: {new_version} — {url}")
+
+        check_for_updates(APP_VERSION, callback=on_update_result)
+
     def _setup_notification_checks(self):
         """Thiết lập kiểm tra thông báo định kỳ."""
         # Run initial checks after a short delay
@@ -752,151 +748,16 @@ class InventoryApp(ctk.CTk):
         OnboardingDialog(self)
     # === END PHASE 3 ===
 
-    # === WEB DASHBOARD (STREAMLIT) ===
-    def _find_free_port(self, start_port=8501, max_attempts=10):
-        """Tìm port trống để chạy Streamlit."""
-        for port in range(start_port, start_port + max_attempts):
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('localhost', port))
-                    return port
-            except OSError:
-                continue
-        return None
-
+    # === WEB DASHBOARD (STREAMLIT) — Delegated to WebDashboardManager (7.1-ARCH-1) ===
     def _launch_web_dashboard(self):
-        """Khởi động Web Dashboard (Streamlit)."""
-        # Check if already running
-        if hasattr(self, '_streamlit_process') and self._streamlit_process and self._streamlit_process.poll() is None:
-            url = f"http://localhost:{self._streamlit_port}"
-            msg = self.get_translation("web_dashboard_already_running").format(url=url)
-            self.show_toast(msg)
-            webbrowser.open(url)
-            return
-        
-        # Find free port
-        port = self._find_free_port()
-        if not port:
-            messagebox.showerror("Error", "Không tìm được port trống để chạy Web Dashboard")
-            return
-        
-        self._streamlit_port = port
-        
-        # Show starting message
-        self.status_var.set(self.get_translation("web_dashboard_starting"))
-        self.update_idletasks()
-        
-        def run_streamlit():
-            try:
-                # Get path to web_dashboard.py
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                dashboard_path = os.path.join(script_dir, "web_dashboard.py")
-                
-                if not os.path.exists(dashboard_path):
-                    self.after(0, lambda: messagebox.showerror("Error", f"Không tìm thấy file: {dashboard_path}"))
-                    return
-                
-                # Launch Streamlit as subprocess
-                cmd = [
-                    "streamlit", "run", dashboard_path,
-                    "--server.port", str(port),
-                    "--server.headless", "true",
-                    "--browser.gatherUsageStats", "false",
-                    "--server.address", "localhost"
-                ]
-                
-                # Use CREATE_NO_WINDOW on Windows to hide console
-                startupinfo = None
-                creationflags = 0
-                if os.name == 'nt':
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    creationflags = subprocess.CREATE_NO_WINDOW
-                
-                self._streamlit_process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    startupinfo=startupinfo,
-                    creationflags=creationflags,
-                    cwd=script_dir
-                )
-                
-                url = f"http://localhost:{port}"
-                
-                # Poll until server is ready (max 10 seconds) instead of fixed sleep
-                import time
-                max_wait = 10
-                poll_interval = 0.5
-                elapsed = 0
-                server_ready = False
-                while elapsed < max_wait:
-                    # Check if process crashed
-                    if self._streamlit_process.poll() is not None:
-                        break
-                    # Try connecting to the port
-                    try:
-                        with socket.create_connection(("localhost", port), timeout=0.5):
-                            server_ready = True
-                            break
-                    except OSError:
-                        pass
-                    time.sleep(poll_interval)
-                    elapsed += poll_interval
-                
-                if server_ready:
-                    self.after(0, lambda: self._on_streamlit_started(url))
-                elif self._streamlit_process.poll() is not None:
-                    stderr = self._streamlit_process.stderr.read().decode('utf-8', errors='ignore')
-                    self.after(0, lambda: self._on_streamlit_error(stderr))
-                else:
-                    # Timeout but process still running — assume it started
-                    self.after(0, lambda: self._on_streamlit_started(url))
-                    
-            except FileNotFoundError:
-                self.after(0, lambda: self._on_streamlit_error("Streamlit chưa được cài đặt. Hãy chạy: pip install streamlit plotly"))
-            except Exception as e:
-                self.after(0, lambda: self._on_streamlit_error(str(e)))
-        
-        # Run in background thread
-        thread = threading.Thread(target=run_streamlit, daemon=True)
-        thread.start()
-    
-    def _on_streamlit_started(self, url):
-        """Callback khi Streamlit đã khởi động."""
-        msg = self.get_translation("web_dashboard_started").format(url=url)
-        self.status_var.set(msg)
-        self.show_toast(msg)
-        logging.info(f"Web Dashboard started at {url}")
-        
-        # Update button state
-        self._update_web_dashboard_buttons()
-        
-        # Open browser
-        webbrowser.open(url)
-    
-    def _on_streamlit_error(self, error):
-        """Callback khi có lỗi khởi động Streamlit."""
-        msg = self.get_translation("web_dashboard_error").format(error=error)
-        self.status_var.set(self.get_translation("status_ready"))
-        messagebox.showerror("Web Dashboard Error", msg)
-        logging.error(f"Web Dashboard error: {error}")
-    
+        """Khởi động Web Dashboard — delegate to WebDashboardManager."""
+        if hasattr(self, '_web_dashboard'):
+            self._web_dashboard.launch()
+
     def _stop_web_dashboard(self):
-        """Dừng Web Dashboard."""
-        if hasattr(self, '_streamlit_process') and self._streamlit_process:
-            try:
-                self._streamlit_process.terminate()
-                self._streamlit_process.wait(timeout=5)
-            except Exception:
-                self._streamlit_process.kill()
-            finally:
-                self._streamlit_process = None
-                self._streamlit_port = None
-                self.show_toast(self.get_translation("web_dashboard_stopped"))
-                logging.info("Web Dashboard stopped")
-                self._update_web_dashboard_buttons()
+        """Dừng Web Dashboard — delegate to WebDashboardManager."""
+        if hasattr(self, '_web_dashboard'):
+            self._web_dashboard.stop()
     # === END WEB DASHBOARD ===
 
     def prompt_for_history_export(self):
@@ -931,13 +792,9 @@ class InventoryApp(ctk.CTk):
     def on_close(self):
         """Xử lý sự kiện đóng ứng dụng một cách an toàn."""
         if messagebox.askokcancel(self.get_translation("confirm_exit_title"), self.get_translation("confirm_exit_msg")):
-            # Stop Web Dashboard if running
-            if hasattr(self, '_streamlit_process') and self._streamlit_process:
-                try:
-                    self._streamlit_process.terminate()
-                    self._streamlit_process.wait(timeout=3)
-                except Exception:
-                    self._streamlit_process.kill()
+            # Stop Web Dashboard if running (delegate to WebDashboardManager)
+            if hasattr(self, '_web_dashboard') and self._web_dashboard.is_running:
+                self._web_dashboard.stop()
             
             save_config(self.config)
             BaseManager.close_connection()
