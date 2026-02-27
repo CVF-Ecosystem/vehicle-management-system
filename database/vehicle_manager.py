@@ -180,9 +180,9 @@ class VehicleManager(BaseManager):
                         "location_id": location_id,
                     },
                 )
-            except Exception:
+            except Exception as _audit_err:
                 # Audit must never break core flow
-                pass
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
             return {"success": True, "message": "Thêm xe mới thành công."}
         
         except VINValidationError as e:
@@ -250,8 +250,8 @@ class VehicleManager(BaseManager):
                                 "location_id": None,
                             },
                         )
-                    except Exception:
-                        pass
+                    except Exception as _audit_err:
+                        logger.debug(f"Audit log failed (non-critical): {_audit_err}")
                     return {"success": True, "message": "Xuất xe thành công."}
                 else:
                     return {"success": False, "message": "Không tìm thấy xe hoặc xe không ở trạng thái Tồn kho."}
@@ -527,8 +527,8 @@ class VehicleManager(BaseManager):
                     old_value=old_vehicle or {},
                     new_value={"owner": owner, "vehicle_type": vehicle_type},
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
             return {"success": True, "message": "Cập nhật thành công."}
         except Exception as e:
             logger.exception(f"Lỗi khi cập nhật chi tiết cho VIN {vin}")
@@ -576,8 +576,8 @@ class VehicleManager(BaseManager):
                         "location_id": old_record.get("location_id"),
                     },
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
             return {"success": True, "message": f"Đã cập nhật VIN từ {old_vin} sang {new_vin}."}
         except sqlite3.IntegrityError:
             self.rollback_transaction()
@@ -863,8 +863,8 @@ class VehicleManager(BaseManager):
                         "archived_to": "deleted_vehicles_archive",
                     },
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
 
             return {"success": True, "message": f"Đã xóa vĩnh viễn xe {vin} và lưu trữ bản ghi."}
         except Exception as e:
@@ -980,8 +980,8 @@ class VehicleManager(BaseManager):
                     old_value={"location_id": old_location_id},
                     new_value={"location_id": new_location_id},
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
             
             self.commit_transaction()
             logger.info(f"Đã di chuyển xe {vin} từ vị trí ID {old_location_id} sang {new_location_id}.")
@@ -1058,8 +1058,8 @@ class VehicleManager(BaseManager):
                         "vins_sample": vins_to_delete[:50],
                     },
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
 
             return {"success": True, "message": f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi.", "count": len(vins_to_delete)}
 

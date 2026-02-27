@@ -113,7 +113,7 @@ class TestDispatchTransactionAtomicity:
                 dispatch_id=dispatch_id,
                 ship_date=datetime.now()
             )
-        except:
+        except Exception:
             pass
         
         # Restore commit
