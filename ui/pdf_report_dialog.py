@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox
 from datetime import datetime, timedelta
 import os
 import threading
+from database.audit_repository import get_audit_repository
 
 class PDFReportDialog(ctk.CTkToplevel):
     """Dialog tạo báo cáo PDF với nhiều loại báo cáo."""
@@ -200,7 +201,7 @@ class PDFReportDialog(ctk.CTkToplevel):
             vehicles = self.app.vehicle_manager.get_all()
             owners = list(set(v.get('owner', '') for v in vehicles if v.get('owner')))
             return sorted(owners)
-        except:
+        except Exception:
             return []
     
     def _on_type_change(self):
@@ -240,7 +241,7 @@ class PDFReportDialog(ctk.CTkToplevel):
         for fmt in ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"]:
             try:
                 return datetime.strptime(date_str.strip(), fmt)
-            except:
+            except ValueError:
                 continue
         return None
     
@@ -310,7 +311,6 @@ class PDFReportDialog(ctk.CTkToplevel):
     
     def _collect_report_data(self, report_type, from_date, to_date, owner_filter):
         """Thu thập dữ liệu cho báo cáo."""
-        from database.audit_repository import get_audit_repository
         
         if report_type == "stock_summary":
             # Báo cáo tồn kho theo chủ hàng

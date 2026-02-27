@@ -42,6 +42,8 @@ def build_central_period_report(db_path: str, period_from: str, period_to: str) 
             raise ValueError("Không có bundle nào trong khoảng thời gian đã chọn")
 
         bundle_ids = [r["bundle_id"] for r in bundle_rows]
+        if not bundle_ids:
+            raise ValueError("Danh sách bundle_ids rỗng sau khi lọc")
 
         # Totals by site for movements during period (sum across bundles in range)
         per_site_totals = conn.execute(

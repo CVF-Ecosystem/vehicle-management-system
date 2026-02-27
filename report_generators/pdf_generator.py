@@ -125,42 +125,27 @@ def generate_vehicle_tag_pdf(file_path, vehicle_info):
 def generate_dashboard_pdf(path, report_data, start_dt, end_dt, get_translation_func):
     """Tạo báo cáo PDF cho dashboard thống kê với font chữ tiếng Việt chính xác."""
     try:
-        # === BƯỚC DEBUG: In ra mọi thứ liên quan đến font ===
-        print("\n" + "="*20 + " DEBUG FONT PDF " + "="*20)
         APP_ROOT = _get_app_root()
-        print(f"DEBUG: Thư mục gốc của ứng dụng: {APP_ROOT}")
-
         FONT_NAME = "Helvetica"
         FONT_BOLD = "Helvetica-Bold"
         
         font_path = os.path.join(APP_ROOT, "assets", "Arial.ttf")
         font_bold_path = os.path.join(APP_ROOT, "assets", "Arialbd.ttf")
 
-        print(f"DEBUG: Đang tìm kiếm font tại: {font_path}")
-        print(f"DEBUG: File Arial.ttf có tồn tại không? -> {os.path.exists(font_path)}")
-        
-        print(f"DEBUG: Đang tìm kiếm font đậm tại: {font_bold_path}")
-        print(f"DEBUG: File Arialbd.ttf có tồn tại không? -> {os.path.exists(font_bold_path)}")
+        logging.debug(f"PDF font search path: {font_path}")
 
         try:
             if os.path.exists(font_path) and os.path.exists(font_bold_path):
-                print("DEBUG: Cả hai file font đều tồn tại. Bắt đầu đăng ký...")
                 pdfmetrics.registerFont(TTFont('Arial', font_path))
                 pdfmetrics.registerFont(TTFont('Arial-Bold', font_bold_path))
                 pdfmetrics.registerFontFamily('Arial', normal='Arial', bold='Arial-Bold')
                 FONT_NAME = "Arial"
                 FONT_BOLD = "Arial-Bold"
-                print("DEBUG: ĐĂNG KÝ FONT THÀNH CÔNG!")
+                logging.debug("PDF font Arial registered successfully.")
             else:
-                print("DEBUG: KHÔNG TÌM THẤY FILE FONT. Sẽ sử dụng font mặc định.")
-                logging.warning("Không tìm thấy file Arial.ttf hoặc Arialbd.ttf trong thư mục /assets.")
+                logging.warning("Không tìm thấy file Arial.ttf hoặc Arialbd.ttf trong thư mục /assets. Sử dụng font Helvetica mặc định.")
         except Exception as e:
-            print(f"DEBUG: ĐÃ XẢY RA LỖI KHI ĐĂNG KÝ FONT: {e}")
             logging.warning(f"Lỗi khi đăng ký font Arial: {e}. Sử dụng font Helvetica mặc định.")
-        
-        print(f"DEBUG: Font sẽ được sử dụng: FONT_NAME='{FONT_NAME}', FONT_BOLD='{FONT_BOLD}'")
-        print("="*58 + "\n")
-        # =========================================================
 
         # --- Vẽ biểu đồ ---
         sns.set_theme(style="whitegrid", font="Arial")

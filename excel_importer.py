@@ -7,6 +7,7 @@ import unidecode
 from config import (
     EXPECTED_VIN_COL, EXPECTED_OWNER_COL, EXPECTED_TYPE_COL
 )
+from database.audit_repository import log_audit, AuditAction
 
 def _normalize_string(s):
     """Chuẩn hóa một chuỗi: bỏ dấu, chuyển thành chữ thường, xóa khoảng trắng."""
@@ -135,8 +136,6 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
         logging.error(f"Lỗi đọc hoặc xử lý file Excel: {e}")
 
         try:
-            from database.audit_repository import log_audit, AuditAction
-
             log_audit(
                 action=AuditAction.IMPORT,
                 details={
@@ -213,8 +212,6 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
 
     # Audit import summary (best-effort)
     try:
-        from database.audit_repository import log_audit, AuditAction
-
         log_audit(
             action=AuditAction.IMPORT,
             details={

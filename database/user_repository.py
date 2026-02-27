@@ -13,6 +13,7 @@ import logging
 import hashlib
 import secrets
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
@@ -36,6 +37,40 @@ MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 PASSWORD_MIN_LENGTH = 6
 
+# Rate limiting settings (7.3-SEC-2)
+# Giới hạn số lần thử đăng nhập trong một khoảng thời gian ngắn
+RATE_LIMIT_WINDOW_SECONDS = 60   # Cửa sổ thời gian (giây)
+RATE_LIMIT_MAX_ATTEMPTS = 10     # Tối đa N lần thử trong cửa sổ thời gian
+
+# In-memory rate limit tracker: {username: [(timestamp, ...), ...]}
+_rate_limit_tracker: dict = {}
+_rate_limit_lock = threading.Lock()
+
+
+def _check_rate_limit(username: str) -> bool:
+    """
+    Kiểm tra rate limit cho username.
+    
+    Returns:
+        True nếu được phép (chưa vượt giới hạn), False nếu bị chặn.
+    """
+    import time
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    
+    with _rate_limit_lock:
+        attempts = _rate_limit_tracker.get(username, [])
+        # Xóa các attempt cũ ngoài cửa sổ thời gian
+        attempts = [t for t in attempts if t > window_start]
+        
+        if len(attempts) >= RATE_LIMIT_MAX_ATTEMPTS:
+            _rate_limit_tracker[username] = attempts
+            return False  # Bị chặn
+        
+        attempts.append(now)
+        _rate_limit_tracker[username] = attempts
+        return True  # Được phép
+
 
 class UserRepository:
     """
@@ -48,6 +83,8 @@ class UserRepository:
 
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # Thread lock để bảo vệ write operations (CQ-6.1)
+        self._write_lock = threading.Lock()
         self._ensure_schema()
         self._ensure_default_admin()
 
@@ -234,24 +271,24 @@ class UserRepository:
         # Hash password
         password_hash, _ = self._hash_password(password)
         
-        # Insert user
+        # Insert user (thread-safe write)
         try:
-            cursor.execute("""
-                INSERT INTO users (username, password_hash, full_name, role, is_active, created_at, created_by)
-                VALUES (?, ?, ?, ?, 1, ?, ?)
-            """, (
-                username,
-                password_hash,
-                full_name,
-                role,
-                datetime.now().isoformat(),
-                created_by_id
-            ))
-            self.conn.commit()
+            with self._write_lock:
+                cursor.execute("""
+                    INSERT INTO users (username, password_hash, full_name, role, is_active, created_at, created_by)
+                    VALUES (?, ?, ?, ?, 1, ?, ?)
+                """, (
+                    username,
+                    password_hash,
+                    full_name,
+                    role,
+                    datetime.now().isoformat(),
+                    created_by_id
+                ))
+                self.conn.commit()
+                user_id = cursor.lastrowid
             
-            user_id = cursor.lastrowid
             logger.info(f"Đã tạo user: {username} (ID: {user_id}, Role: {role})")
-            
             return {"success": True, "message": "Tạo user thành công", "user_id": user_id}
             
         except Exception as e:
@@ -338,11 +375,12 @@ class UserRepository:
         params.append(user_id)
         
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(f"""
-                UPDATE users SET {', '.join(updates)} WHERE id = ?
-            """, params)
-            self.conn.commit()
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(f"""
+                    UPDATE users SET {', '.join(updates)} WHERE id = ?
+                """, params)
+                self.conn.commit()
             
             logger.info(f"Đã cập nhật user ID {user_id}")
             return {"success": True, "message": "Cập nhật thành công"}
@@ -359,12 +397,13 @@ class UserRepository:
         password_hash, _ = self._hash_password(new_password)
         
         try:
-            cursor = self.conn.cursor()
-            cursor.execute("""
-                UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL
-                WHERE id = ?
-            """, (password_hash, user_id))
-            self.conn.commit()
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute("""
+                    UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL
+                    WHERE id = ?
+                """, (password_hash, user_id))
+                self.conn.commit()
             
             logger.info(f"Đã đổi mật khẩu cho user ID {user_id}")
             return {"success": True, "message": "Đổi mật khẩu thành công"}
@@ -383,9 +422,10 @@ class UserRepository:
             return {"success": False, "message": "Không thể xóa tài khoản admin mặc định"}
         
         try:
-            cursor = self.conn.cursor()
-            cursor.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
-            self.conn.commit()
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+                self.conn.commit()
             
             logger.info(f"Đã vô hiệu hóa user ID {user_id}")
             return {"success": True, "message": "Đã vô hiệu hóa user"}
@@ -407,6 +447,16 @@ class UserRepository:
         Returns:
             dict: {"success": bool, "message": str, "user": dict or None}
         """
+        # Rate limiting check (7.3-SEC-2)
+        if not _check_rate_limit(username):
+            logger.warning(f"Rate limit exceeded for username: {username}")
+            self._log_login_attempt(None, username, False, "Rate limit exceeded")
+            return {
+                "success": False,
+                "message": f"Quá nhiều lần thử đăng nhập. Vui lòng đợi {RATE_LIMIT_WINDOW_SECONDS} giây.",
+                "user": None
+            }
+        
         user = self.get_user_by_username(username)
         
         if not user:

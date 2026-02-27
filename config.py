@@ -28,7 +28,8 @@ BACKUP_DIR = os.getenv("BACKUP_DIR", get_resource_path("backups"))
 
 # --- Thông tin ứng dụng ---
 APP_NAME = "Phần mềm Quản lý xe"
-APP_VERSION = "V1.0 @2026"
+APP_VERSION = "1.0.0"
+APP_VERSION_DISPLAY = "V1.0 @2026"  # Chuỗi hiển thị cho người dùng
 
 # --- Hằng số nghiệp vụ ---
 STATUS_IN_STOCK = "IN_STOCK"

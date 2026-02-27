@@ -12,6 +12,7 @@ from config import PAD_GENERAL, PAD_SMALL
 from ui.components import EditVehicleDialog, DateRangeDialog, style_treeview, LocationSwapDialog, add_right_click_menu, harmonize_combobox_style
 from ui.vehicle_timeline_dialog import VehicleTimelineDialog
 from data_normalizer import normalizer
+from database.audit_repository import log_audit, AuditAction
 
 class StockTab:
     def __init__(self, parent_frame, app_instance):
@@ -426,8 +427,6 @@ class StockTab:
 
             if result.get("success"):
                 try:
-                    from database.audit_repository import log_audit, AuditAction
-
                     log_audit(
                         action=AuditAction.EXPORT,
                         details={
@@ -467,8 +466,6 @@ class StockTab:
 
             if result.get("success"):
                 try:
-                    from database.audit_repository import log_audit, AuditAction
-
                     log_audit(
                         action=AuditAction.EXPORT,
                         details={
@@ -622,8 +619,6 @@ class StockTab:
 
             if result.get("success"):
                 try:
-                    from database.audit_repository import log_audit, AuditAction
-
                     log_audit(
                         action=AuditAction.EXPORT,
                         details={

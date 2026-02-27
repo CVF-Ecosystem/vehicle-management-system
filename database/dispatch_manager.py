@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 from .base_manager import BaseManager
 from .location_manager import LocationManager
 from config import STATUS_IN_STOCK, STATUS_SHIPPED, STATUS_SHIPMENT_OPEN, STATUS_SHIPMENT_COMPLETED
+from database.audit_repository import log_audit, log_update, AuditAction
 
 class DispatchManager(BaseManager):
     """Quản lý các hoạt động liên quan đến bảng 'dispatches' (Phiếu xuất/Lô hàng xuất)."""
@@ -28,8 +29,6 @@ class DispatchManager(BaseManager):
                 new_id = cursor.lastrowid
 
             try:
-                from database.audit_repository import log_audit, AuditAction
-
                 log_audit(
                     action=AuditAction.CREATE,
                     table_name="dispatches",
@@ -43,8 +42,8 @@ class DispatchManager(BaseManager):
                     },
                     details={"source": "DispatchManager.create_dispatch"},
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
 
             return new_id
         except Exception as e:
@@ -70,16 +69,14 @@ class DispatchManager(BaseManager):
                 self.conn.execute("UPDATE vehicles SET dispatch_id = ? WHERE vin = ?", (dispatch_id, vin))
 
             try:
-                from database.audit_repository import log_update
-
                 log_update(
                     table_name="vehicles",
                     record_id=str(vin),
                     old_value={"dispatch_id": old_dispatch_id},
                     new_value={"dispatch_id": dispatch_id},
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
             
             return True
         except Exception as e:
@@ -130,8 +127,6 @@ class DispatchManager(BaseManager):
             self.commit_transaction()
 
             try:
-                from database.audit_repository import log_audit, AuditAction
-
                 log_audit(
                     action=AuditAction.DELETE,
                     table_name="dispatches",
@@ -142,8 +137,8 @@ class DispatchManager(BaseManager):
                         "vins_sample": vins[:20],
                     },
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug(f"Audit log failed (non-critical): {_audit_err}")
 
             logger.info(f"Đã hủy thành công phiếu xuất #{dispatch_id}.")
             return {"success": True, "message": f"Đã hủy phiếu xuất #{dispatch_id}."}
@@ -210,8 +205,6 @@ class DispatchManager(BaseManager):
 
             # Audit logging (after successful commit)
             try:
-                from database.audit_repository import log_audit, AuditAction
-
                 log_audit(
                     action=AuditAction.UPDATE,
                     table_name="dispatches",

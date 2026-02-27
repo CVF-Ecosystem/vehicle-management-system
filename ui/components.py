@@ -339,7 +339,7 @@ class AutocompleteEntry(ctk.CTkFrame):
             focused = self.focus_get()
             if focused != self._listbox and focused != self.entry:
                 self._hide_listbox()
-        except:
+        except Exception:
             self._hide_listbox()
     
     def _on_arrow_down(self, event):
@@ -482,7 +482,7 @@ def add_right_click_menu(app, widget):
             has_selection = widget.selection_get()
             menu.entryconfigure(app.get_translation("ctx_menu_cut"), state="normal" if has_selection else "disabled")
             menu.entryconfigure(app.get_translation("ctx_menu_copy"), state="normal" if has_selection else "disabled")
-        except:
+        except Exception:
             menu.entryconfigure(app.get_translation("ctx_menu_cut"), state="disabled")
             menu.entryconfigure(app.get_translation("ctx_menu_copy"), state="disabled")
         
@@ -490,7 +490,7 @@ def add_right_click_menu(app, widget):
             # Kiểm tra xem clipboard có nội dung không
             widget.clipboard_get()
             menu.entryconfigure(app.get_translation("ctx_menu_paste"), state="normal")
-        except:
+        except Exception:
             menu.entryconfigure(app.get_translation("ctx_menu_paste"), state="disabled")
 
     def show_menu(event):

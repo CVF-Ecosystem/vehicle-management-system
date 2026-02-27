@@ -498,7 +498,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
                 dt = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
                 return dt.strftime("%d/%m/%Y")
             return str(date_str)[:10]
-        except:
+        except (ValueError, TypeError):
             return str(date_str)[:10] if date_str else ""
     
     def _format_datetime(self, dt_str: str) -> str:
@@ -510,7 +510,7 @@ class DeletedVehiclesDialog(ctk.CTkToplevel):
                 dt = datetime.fromisoformat(str(dt_str).replace("Z", "+00:00"))
                 return dt.strftime("%d/%m/%Y %H:%M")
             return str(dt_str)[:16]
-        except:
+        except (ValueError, TypeError):
             return str(dt_str)[:16] if dt_str else ""
     
     # ========== UI Updates ==========

@@ -254,3 +254,176 @@ python -m pytest
 
 - Tích hợp nút export bundle + generate central report ngay trong UI (không cần chạy CLI).
 - Màn hình quản trị người dùng/audit nâng cao (lọc, export log)
+
+---
+
+## Giai đoạn 7 — Đề xuất Nâng cấp Toàn diện (Chuyên gia Phần mềm)
+
+> **Ngày đề xuất:** 2026-02-27
+> **Mục tiêu:** Nâng cấp từ "ứng dụng desktop tốt" → "hệ thống phần mềm chuyên nghiệp, bảo trì dài hạn"
+
+### 7.1 · Kiến trúc & Scalability
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **Tách `main.py` thành nhiều module** — `main.py` hiện có 916 dòng, chứa cả UI logic, event handlers, web dashboard management | God class — khó test, khó maintain |
+| 🔴 High | **Dependency Injection Container** — Hiện tại các manager được tạo trực tiếp trong `InventoryApp.__init__()` | Khó mock khi test, coupling cao |
+| 🟡 Medium | **Repository Pattern nhất quán** — `VehicleManager` vừa là repository vừa có business logic | Vi phạm Single Responsibility |
+| 🟡 Medium | **Event Bus / Observer Pattern** — `on_data_changed()` gọi trực tiếp các tab | Coupling giữa các component |
+| 🟢 Low | **Config Management với Pydantic** — Thay `configparser` bằng Pydantic Settings | Type safety, validation tự động |
+
+### 7.2 · Testing & CI/CD
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **GitHub Actions CI pipeline** — Chạy `pytest` tự động khi push/PR | Hiện tại không có CI |
+| 🔴 High | **Test coverage ≥ 70%** — Hiện tại coverage thấp, nhiều business logic chưa có test | Rủi ro regression cao |
+| 🟡 Medium | **Integration tests cho toàn bộ luồng** — Nhập → Tồn kho → Xuất → Báo cáo | Chỉ có unit tests riêng lẻ |
+| 🟡 Medium | **Property-based testing với Hypothesis** — Cho VIN validation, data normalizer | Phát hiện edge cases tự động |
+| 🟢 Low | **Mutation testing với mutmut** — Đánh giá chất lượng test suite | Biết test có thực sự kiểm tra logic không |
+
+### 7.3 · Bảo mật
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **Xóa `unlock.txt` mechanism** — Cơ chế reset admin qua file text là security hole | Bất kỳ ai có quyền ghi file đều có thể reset admin |
+| 🔴 High | **Rate limiting cho login** — Hiện có lockout nhưng không có rate limiting ở tầng network | Brute force vẫn có thể qua nhiều connection |
+| 🟡 Medium | **Mã hóa SQLite database** — Dùng SQLCipher hoặc encrypt sensitive fields | Dữ liệu xe/chủ hàng lưu plaintext |
+| 🟡 Medium | **Audit log integrity** — Thêm hash chain để phát hiện audit log bị sửa | Audit log hiện có thể bị xóa/sửa |
+| 🟢 Low | **2FA cho admin account** — TOTP (Google Authenticator) | Tăng bảo mật tài khoản admin |
+
+### 7.4 · Performance & UX
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **Virtual scrolling cho Treeview** — Khi có >10.000 xe, UI bị lag | Hiện tại load toàn bộ vào memory |
+| 🟡 Medium | **Background sync thread** — Tự động refresh data mỗi N phút | Người dùng phải F5 thủ công |
+| 🟡 Medium | **Undo/Redo cho thao tác quan trọng** — Nhập xe, xuất xe, xóa xe | Không thể hoàn tác lỗi nhập liệu |
+| 🟡 Medium | **Barcode/QR scanner tích hợp tốt hơn** — Hiện tại camera scanner còn thô | Tăng tốc độ nhập liệu thực tế |
+| 🟢 Low | **Dark mode hoàn chỉnh** — Một số widget vẫn dùng màu hardcode | Trải nghiệm không nhất quán |
+
+### 7.5 · Code Quality & Maintainability
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **Type hints đầy đủ** — Nhiều hàm thiếu type annotations | Khó IDE support, khó refactor |
+| 🔴 High | **Docstrings chuẩn Google/NumPy style** — Nhiều hàm thiếu hoặc docstring không đầy đủ | Khó onboard developer mới |
+| 🟡 Medium | **Linting với ruff/flake8 + pre-commit hooks** — Tự động enforce code style | Hiện tại không có linting |
+| 🟡 Medium | **Tách translations thành file JSON** — `translations.py` hiện là Python dict lớn | Khó cho non-developer thêm ngôn ngữ |
+| 🟡 Medium | **Database migration system** — Dùng Alembic hoặc custom migration runner | Hiện tại dùng `_upgrade_table_if_needed()` thủ công |
+| 🟢 Low | **Changelog tự động** — Dùng conventional commits + `git-cliff` | Dễ track thay đổi theo version |
+
+### 7.6 · Deployment & Distribution
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **Auto-update mechanism** — Kiểm tra version mới và tự cập nhật | Hiện tại phải cập nhật thủ công |
+| 🟡 Medium | **PyInstaller build pipeline** — Tự động build .exe khi tag release | Hiện tại build thủ công |
+| 🟡 Medium | **Installer với NSIS/Inno Setup** — Thay vì chạy .exe trực tiếp | Trải nghiệm cài đặt chuyên nghiệp hơn |
+| 🟢 Low | **Docker container cho web dashboard** — Streamlit dashboard có thể chạy độc lập | Dễ deploy lên server HQ |
+
+### 7.7 · Tính năng Nghiệp vụ Còn thiếu
+
+| Ưu tiên | Đề xuất | Lý do |
+|---------|---------|-------|
+| 🔴 High | **Import/Export từ hệ thống ERP** — Kết nối với SAP/Oracle/Odoo qua API | Tránh nhập liệu 2 lần |
+| 🟡 Medium | **Báo cáo tự động qua email** — Gửi báo cáo ngày/tuần tự động | Giảm công việc thủ công cho HQ |
+| 🟡 Medium | **Mobile app (React Native/Flutter)** — Scan QR/barcode trực tiếp từ điện thoại | Nhân viên bãi không cần máy tính |
+| 🟡 Medium | **Hình ảnh xe** — Chụp ảnh xe khi nhập/xuất, lưu kèm record | Bằng chứng trực quan, giảm tranh chấp |
+| 🟢 Low | **GPS tracking tích hợp** — Theo dõi vị trí xe vận chuyển | Biết xe đang ở đâu trong quá trình vận chuyển |
+
+---
+
+### Thứ tự ưu tiên thực hiện (Roadmap 2026)
+
+```
+Q1/2026: 7.2 (CI/CD + coverage) + 7.3 (security holes) + 7.5 (type hints + linting)
+Q2/2026: 7.1 (refactor main.py) + 7.4 (virtual scrolling) + 7.6 (auto-update)
+Q3/2026: 7.7 (ERP integration + email reports) + 7.4 (undo/redo)
+Q4/2026: 7.7 (mobile app) + 7.6 (Docker)
+```
+
+---
+
+## Giai đoạn CQ — Code Quality Fixes (⏭ Next)
+
+> **Nguồn gốc:** Kết quả đánh giá chất lượng code ngày 2026-02-27.
+> Tổng điểm hiện tại: **6.7/10**. Mục tiêu sau khi fix: **8.5/10**.
+
+### CQ-1 · Critical Bugs ✅ Đã fix (2026-02-27)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-1.1 | `auth/auth_manager.py` | Dead code `cls._current_user = None` sau `return` | ✅ Đã xóa |
+| CQ-1.2 | `auth/auth_manager.py` | Phương thức `get_user_repository()` định nghĩa 2 lần | ✅ Đã hợp nhất (xóa định nghĩa thừa) |
+| CQ-1.3 | `report_generators/pdf_generator.py` | 8 lệnh `print()` debug trong production code | ✅ Thay bằng `logging.debug()` |
+
+### CQ-2 · Error Handling ✅ Đã fix (2026-02-27)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-2.1 | `main.py` | Bare `except:` khi terminate Streamlit | ✅ Đổi thành `except Exception:` |
+| CQ-2.2 | `report_generators/excel_generator.py` | Bare `except: pass` | ✅ Đổi thành `except (TypeError, AttributeError):` |
+| CQ-2.3 | `ui/components.py` | Bare `except:` trong UI components | ✅ Đổi thành `except Exception:` |
+| CQ-2.4 | `ui/config_dialog.py` | Bare `except: pass` | ✅ Đổi thành `except Exception as e: logging.warning(...)` |
+| CQ-2.5 | `ui/deleted_vehicles_dialog.py` | Bare `except:` trong format date | ✅ Đổi thành `except (ValueError, TypeError):` |
+| CQ-2.6 | `ui/onboarding_dialog.py` | Bare `except:` | ✅ Đổi thành `except Exception:` |
+| CQ-2.7 | `ui/pdf_report_dialog.py` | Bare `except:` | ✅ Đổi thành `except Exception:` / `except ValueError:` |
+| CQ-2.8 | `ui/user_management_dialog.py` | Bare `except:` khi parse datetime | ✅ Đổi thành `except (ValueError, TypeError):` |
+| CQ-2.9 | `ui/yard_map_tab.py` | Bare `except:` | ✅ Đổi thành `except (ValueError, TypeError):` |
+
+> **Tổng cộng:** 18 chỗ dùng bare `except:` đã được sửa.
+
+### CQ-3 · Code Duplication & Initialization (Ưu tiên trung bình)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-3.1 | `main.py` | Font được khởi tạo 2 lần trong `__init__` | ✅ Đã xóa lần khởi tạo đầu (hardcode Arial) |
+| CQ-3.2 | `database/vehicle_manager.py` | `from database.audit_repository import ...` nằm trong hàm — import lặp lại | ✅ Chuyển tất cả lên đầu file |
+| CQ-3.3 | `main.py` | `on_data_changed()` refresh toàn bộ tất cả tabs | ✅ Chỉ refresh stock_tab khi đang active; dropdowns vẫn update nhẹ |
+
+### CQ-4 · Testing Issues (Ưu tiên trung bình)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-4.1 | `tests/conftest.py` | Test data dùng status lowercase `"in_stock"`, `"dispatched"` | ✅ Sửa thành `"IN_STOCK"`, `"SHIPPED"` |
+| CQ-4.2 | `tests/test_full_logic.py` | Không phải pytest test chuẩn | ✅ Tạo `tests/test_logic_pytest.py` với pytest classes + assert chuẩn |
+
+### CQ-5 · Robustness & Edge Cases (Ưu tiên thấp)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-5.1 | `reporting/central_report.py` | Không có guard khi `bundle_ids` rỗng | ✅ Thêm guard `if not bundle_ids: raise ValueError(...)` |
+| CQ-5.2 | `auth/auth_manager.py` | `refresh_session()` không được gọi tự động | ✅ Gọi trong `on_tab_change()` và `on_data_changed()` |
+| CQ-5.3 | `main.py` | `time.sleep(3)` cứng nhắc khi chờ Streamlit | ✅ Thay bằng polling loop kiểm tra port (tối đa 10 giây) |
+| CQ-5.4 | `config.py` | `APP_VERSION` không theo SemVer | ✅ Đổi thành `"1.0.0"`, thêm `APP_VERSION_DISPLAY` |
+| CQ-5.5 | `main.py` | `menu_font = ("Arial", 12)` hardcode font | ✅ Dùng `(FONT_FAMILY, FONT_SIZE_SMALL)` từ `config.py` |
+
+### CQ-6 · Thread Safety (Ưu tiên thấp)
+
+| ID | File | Vấn đề | Trạng thái |
+|----|------|---------|-----------|
+| CQ-6.1 | `database/user_repository.py` | `check_same_thread=False` nhưng không có mutex | ✅ Thêm `threading.Lock()` bảo vệ create/update/delete/change_password |
+
+---
+
+### Tóm tắt tiến độ (2026-02-27) — ✅ HOÀN THÀNH TẤT CẢ
+
+- **Đã fix:** CQ-1.1, CQ-1.2, CQ-1.3, CQ-2.1~2.9 (18 bare except), CQ-3.1, CQ-3.2, CQ-3.3, CQ-4.1, CQ-4.2, CQ-5.1, CQ-5.2, CQ-5.3, CQ-5.4, CQ-5.5, CQ-6.1
+- **Tổng:** 16/16 mục đã hoàn thành
+
+### Tiêu chí hoàn thành
+
+- [x] CQ-1: Không còn dead code, không còn duplicate method
+- [x] CQ-2: `grep -r "except:" --include="*.py"` trả về 0 kết quả trong source code (ngoài tests)
+- [x] CQ-3.1: `__init__` của `InventoryApp` không còn khởi tạo font 2 lần
+- [x] CQ-3.2: Tất cả import audit_repository đã ở đầu file
+- [x] CQ-3.3: `on_data_changed()` chỉ refresh stock_tab khi đang active
+- [x] CQ-4.1: Test data dùng đúng status constants
+- [x] CQ-4.2: `tests/test_logic_pytest.py` với pytest classes + assert chuẩn
+- [x] CQ-5.1: `central_report.py` có guard cho `bundle_ids` rỗng
+- [x] CQ-5.2: `refresh_session()` được gọi trong `on_tab_change()` và `on_data_changed()`
+- [x] CQ-5.3: Polling loop thay `time.sleep(3)` khi chờ Streamlit
+- [x] CQ-5.4: `APP_VERSION` theo SemVer (`1.0.0`)
+- [x] CQ-5.5: Menu font dùng `FONT_FAMILY` constant
+- [x] CQ-6.1: `threading.Lock()` bảo vệ write ops trong `user_repository.py`
