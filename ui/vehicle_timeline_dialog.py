@@ -10,6 +10,7 @@ import json
 import logging
 
 from config import PAD_GENERAL, PAD_SMALL
+from database.audit_repository import get_audit_repository
 
 # Module-level fonts (to avoid dependency on app instance)
 FONT_NORMAL = ("Segoe UI", 13)
@@ -229,8 +230,6 @@ class VehicleTimelineDialog(ctk.CTkToplevel):
         self.update_idletasks()
         
         try:
-            from database.audit_repository import get_audit_repository
-            
             audit_repo = get_audit_repository()
             entries = audit_repo.get_for_record("vehicles", self.vin, limit=200)
             

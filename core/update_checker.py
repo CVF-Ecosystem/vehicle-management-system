@@ -28,7 +28,7 @@ class UpdateChecker:
     
     Usage:
         checker = UpdateChecker(current_version="1.0.0")
-        checker.check_async(callback=lambda info: print(info))
+        checker.check_async(callback=lambda info: logging.info(f"Update info: {info}"))
     """
 
     def __init__(self, current_version: str):
