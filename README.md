@@ -1,4 +1,5 @@
-# 🚗 Vehicle Management System — v1.0.0
+# 🚗 Vehicle Management System — v1.0
+<!-- version header should match `config.APP_VERSION_DISPLAY`; update there and re‑generate docs if needed -->
 
 > **Phần mềm Quản lý Xe** — Ứng dụng desktop quản lý xe nhập/xuất bãi cho doanh nghiệp vận tải và logistics.
 
@@ -118,7 +119,7 @@ python main.py
 
 ### Cách 2: Chạy file .exe (End User — Windows)
 
-1. Tải file `VehicleManagement_v1.0.0.exe` từ [Releases](../../releases)
+1. Tải file `VehicleManagement_v1.0.exe` từ [Releases](../../releases)
 2. Giải nén và chạy file .exe
 3. Đăng nhập với tài khoản mặc định: `admin` / `admin123`
 4. **⚠️ Đổi mật khẩu admin ngay sau lần đăng nhập đầu tiên!**

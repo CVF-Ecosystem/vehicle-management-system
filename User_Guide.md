@@ -1,7 +1,7 @@
 
 # HƯỚNG DẪN SỬ DỤNG CHO NGƯỜI DÙNG CUỐI (BẢN .EXE)
 
-> **Phiên bản:** V5.2.0 | **Cập nhật:** 15/01/2026 | **Trạng thái:** ✅ Production
+> **Phiên bản:** V5.1.0 | **Cập nhật:** 15/01/2026 | **Trạng thái:** ✅ Production
 
 Tài liệu này hướng dẫn sử dụng phần mềm Quản lý Xe dành cho nhân viên, người dùng cuối (không cần thao tác kỹ thuật, chỉ cần chạy file .exe).
 

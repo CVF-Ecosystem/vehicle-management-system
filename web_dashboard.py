@@ -12,11 +12,12 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
 import os
+from config import APP_VERSION_DISPLAY
 
 # ============================================
 # CONFIGURATION
 # ============================================
-DB_FILE = "vehicle_management_v5.1.db"
+DB_FILE = "vehicle_management_v1.0.db"
 PAGE_TITLE = "🚗 Vehicle Management Dashboard"
 PAGE_ICON = "🚗"
 
@@ -983,7 +984,7 @@ def main():
     st.divider()
     st.markdown(
         f"<div style='text-align:center; color:#888; font-size:0.85rem;'>"
-        f"🚗 <b>Vehicle Management System V1.0 @2026</b> | Tiền - Cảng Tân Thuận"
+        f"🚗 <b>Vehicle Management System {APP_VERSION_DISPLAY}</b> | Tiền - Cảng Tân Thuận"
         f"</div>",
         unsafe_allow_html=True
     )

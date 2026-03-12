@@ -10,7 +10,7 @@ def get_resource_path(relative_path):
 	return os.path.join(base_path, relative_path)
 
 # --- Cấu hình file ---
-DB_FILE = get_resource_path("vehicle_management_v5.1.db")
+DB_FILE = get_resource_path("vehicle_management_v1.0.db")
 # Database riêng cho đăng nhập/audit (tách với DB xe)
 # Đặt trong thư mục config để dễ quản lý/backup.
 SECURITY_DB_FILE = get_resource_path("config/security.db")
@@ -28,7 +28,7 @@ BACKUP_DIR = os.getenv("BACKUP_DIR", get_resource_path("backups"))
 
 # --- Thông tin ứng dụng ---
 APP_NAME = "Phần mềm Quản lý xe"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0 @2026"  # Phiên bản kỹ thuật, có thể dùng để kiểm tra tương thích dữ liệu
 APP_VERSION_DISPLAY = "V1.0 @2026"  # Chuỗi hiển thị cho người dùng
 
 # --- Hằng số nghiệp vụ ---

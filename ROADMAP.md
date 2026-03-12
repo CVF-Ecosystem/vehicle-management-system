@@ -1,7 +1,7 @@
 
 # ROADMAP (Canonical)
 
-> **Trạng thái:** ✅ Production Ready (V5.3.0 - All Features Complete)
+> **Trạng thái:** ✅ Production Ready (V1.0 - All Features Complete)
 >
 > **Lưu ý cho người dùng cuối:**
 >
