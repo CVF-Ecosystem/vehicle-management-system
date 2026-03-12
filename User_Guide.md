@@ -1,7 +1,7 @@
 
 # HƯỚNG DẪN SỬ DỤNG CHO NGƯỜI DÙNG CUỐI (BẢN .EXE)
 
-> **Phiên bản:** V5.1.0 | **Cập nhật:** 15/01/2026 | **Trạng thái:** ✅ Production
+> **Phiên bản:** v1.0 | **Cập nhật:** 12/03/2026 | **Trạng thái:** ✅ Production
 
 Tài liệu này hướng dẫn sử dụng phần mềm Quản lý Xe dành cho nhân viên, người dùng cuối (không cần thao tác kỹ thuật, chỉ cần chạy file .exe).
 
@@ -9,9 +9,9 @@ Tài liệu này hướng dẫn sử dụng phần mềm Quản lý Xe dành cho
 
 ## BẮT ĐẦU NHANH VỚI PHẦN MỀM (.EXE)
 
-1. Tải file **SOFT_QUAN_LY_XE_V5.1.0.exe** từ bộ phận IT hoặc link được cung cấp
+1. Tải file **SOFT_QUAN_LY_XE_v1.0.exe** từ bộ phận IT hoặc link được cung cấp
 2. Giải nén (nếu là file .zip) vào một thư mục trên máy tính
-3. Nhấp đúp vào file **SOFT_QUAN_LY_XE_V5.1.0.exe** để chạy phần mềm
+3. Nhấp đúp vào file **SOFT_QUAN_LY_XE_v1.0.exe** để chạy phần mềm
 4. Lần đầu chạy, phần mềm sẽ tự tạo các file dữ liệu cần thiết
 
 > **Lưu ý:**
@@ -30,7 +30,7 @@ Tài liệu này hướng dẫn sử dụng phần mềm Quản lý Xe dành cho
 
 ---
 
-## CÁC CHỨC NĂNG ĐÃ HOÀN THIỆN (V5.2.0)
+## CÁC CHỨC NĂNG ĐÃ HOÀN THIỆN (v1.0)
 
 ### Nghiệp vụ cốt lõi
 - Nhập bãi: Thủ công hoặc import Excel
