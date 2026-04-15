@@ -19,10 +19,7 @@ from typing import Optional, List, Dict, Any
 
 import config
 
-try:
-        import bcrypt  # type: ignore
-except Exception:  # pragma: no cover
-        bcrypt = None
+import bcrypt
 
 logger = logging.getLogger(__name__)
 

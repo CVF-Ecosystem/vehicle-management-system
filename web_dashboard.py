@@ -12,12 +12,15 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
 import os
-from config import APP_VERSION_DISPLAY
+
+# Lấy version từ biến môi trường (được truyền vào bởi WebDashboardManager khi chạy từ exe)
+# Fallback về chuỗi tĩnh nếu chạy độc lập
+APP_VERSION_DISPLAY = os.environ.get('VEHICLE_APP_VERSION', 'V1.0 @2026')
 
 # ============================================
 # CONFIGURATION
 # ============================================
-DB_FILE = "vehicle_management_v1.0.db"
+DB_FILE = os.environ.get('VEHICLE_APP_DB_PATH', "vehicle_management_v1.0.db")
 PAGE_TITLE = "🚗 Vehicle Management Dashboard"
 PAGE_ICON = "🚗"
 

@@ -1,0 +1,74 @@
+====================================================================
+  HƯỚNG DẪN SỬ DỤNG WEB DASHBOARD
+  Phần mềm Quản lý Xe V1.0 @2026
+====================================================================
+
+Web Dashboard là tính năng xem báo cáo trực quan qua trình duyệt
+(Chrome, Edge, Firefox...). Vì tính chất kỹ thuật, tính năng này
+KHÔNG thể đóng gói vào file EXE, và cần cài đặt thêm một lần.
+
+--------------------------------------------------------------------
+  YÊU CẦU: MÁY TÍNH CÓ CÀI Python
+--------------------------------------------------------------------
+
+Nếu máy chưa có Python, tải tại:
+    https://www.python.org/downloads/
+    (Chọn Python 3.11 hoặc mới hơn, tích ô "Add Python to PATH")
+
+--------------------------------------------------------------------
+  BƯỚC 1: Cài đặt thư viện (chỉ làm 1 LẦN DUY NHẤT)
+--------------------------------------------------------------------
+
+Mở Command Prompt (cmd) và chạy lệnh:
+
+    pip install streamlit plotly
+
+Chờ khoảng 2-5 phút để cài xong.
+
+--------------------------------------------------------------------
+  BƯỚC 2: Kiểm tra file web_dashboard.py
+--------------------------------------------------------------------
+
+Đảm bảo file web_dashboard.py nằm CÙNG THƯ MỤC với VehicleManagement.exe:
+
+    📁 Thư mục bạn đang dùng/
+    ├── VehicleManagement.exe      ← ứng dụng chính
+    └── web_dashboard.py           ← file dashboard (PHẢI có ở đây)
+
+--------------------------------------------------------------------
+  BƯỚC 3: Sử dụng
+--------------------------------------------------------------------
+
+1. Mở VehicleManagement.exe như bình thường
+2. Đăng nhập vào ứng dụng
+3. Bấm nút "🌐 Web Dashboard" ở góc trên bên phải
+4. Trình duyệt sẽ tự mở tại địa chỉ: http://localhost:8501
+
+--------------------------------------------------------------------
+  XỬ LÝ LỖI THƯỜNG GẶP
+--------------------------------------------------------------------
+
+Lỗi: "Streamlit chưa được cài đặt"
+  → Chạy lại: pip install streamlit plotly
+
+Lỗi: "Không tìm thấy file web_dashboard.py"
+  → Kiểm tra file web_dashboard.py có cùng thư mục với EXE không
+
+Lỗi: "Port đã được sử dụng"
+  → Đóng trình duyệt, bấm "⏹ Dừng" rồi mở lại
+
+Lỗi màn hình trắng trong trình duyệt
+  → Chờ 5-10 giây rồi F5 để tải lại
+
+--------------------------------------------------------------------
+  LƯU Ý
+--------------------------------------------------------------------
+
+• Web Dashboard chỉ xem được trên máy cài đặt (localhost)
+• Không cần kết nối Internet để sử dụng
+• Dữ liệu hiển thị từ database của ứng dụng chính
+• Đóng ứng dụng chính sẽ tự động tắt Web Dashboard
+
+====================================================================
+  Hỗ trợ kỹ thuật: liên hệ người cung cấp phần mềm
+====================================================================

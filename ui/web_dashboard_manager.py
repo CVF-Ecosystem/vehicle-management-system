@@ -75,9 +75,19 @@ class WebDashboardManager:
     def _run_streamlit(self):
         """Chạy Streamlit trong background thread."""
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            # web_dashboard.py nằm ở project root, không phải ui/
-            dashboard_path = os.path.join(os.path.dirname(script_dir), "web_dashboard.py")
+            import sys
+            import os
+            
+            # Giải quyết đường dẫn web_dashboard.py trong môi trường PyInstaller
+            if hasattr(sys, '_MEIPASS'):
+                # Khi chạy bằng file .exe đã build, script nằm cùng thư mục với file exe
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                # Khi chạy qua python main.py, script nằm ở cấu trúc dự án
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                base_dir = os.path.dirname(script_dir)
+                
+            dashboard_path = os.path.join(base_dir, "web_dashboard.py")
 
             if not os.path.exists(dashboard_path):
                 self.app.after(
@@ -101,6 +111,21 @@ class WebDashboardManager:
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = subprocess.SW_HIDE
                 creationflags = subprocess.CREATE_NO_WINDOW
+                
+            env = os.environ.copy()
+            import config, sys
+            from config import APP_VERSION_DISPLAY
+            env['VEHICLE_APP_DB_PATH'] = config.get_data_path("vehicle_management_v1.0.db")
+            env['VEHICLE_APP_VERSION'] = APP_VERSION_DISPLAY
+            
+            # --- FIX: PyInstaller DLL Conflict ---
+            # PyInstaller thêm _MEIPASS vào biến PATH. Khi gọi subprocess chạy bằng một phiên bản Python khác (v.d global streamlit),
+            # nó sẽ vô tình load nhầm file .dll của Python 3.12 (có trong _MEIPASS), gây lỗi "conflicts with this version of Python".
+            # Giải pháp: Xoá _MEIPASS khỏi biến môi trường PATH trước khi gọi Popen.
+            if hasattr(sys, '_MEIPASS'):
+                path_env = env.get('PATH', '')
+                env['PATH'] = os.pathsep.join([p for p in path_env.split(os.pathsep) if p.strip().lower() != sys._MEIPASS.lower()])
+            # -------------------------------------
 
             self._process = subprocess.Popen(
                 cmd,
@@ -108,7 +133,8 @@ class WebDashboardManager:
                 stderr=subprocess.PIPE,
                 startupinfo=startupinfo,
                 creationflags=creationflags,
-                cwd=os.path.dirname(script_dir),
+                cwd=base_dir,
+                env=env,
             )
 
             url = f"http://localhost:{self._port}"
