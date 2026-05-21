@@ -137,7 +137,16 @@ class OutboundTab:
 
         # === PHASE 2.5: Sử dụng entry thay vì combo ===
         transport_plate = self.transport_entry.get().strip()
-        driver_name = self.driver_entry.get().strip()
+        
+        original_driver_name = self.driver_entry.get().strip()
+        from data_normalizer import normalize_driver_name as _norm_name
+        driver_name = _norm_name(original_driver_name)
+        
+        # Hiển thị toast cảnh báo sửa lỗi chính tả nếu có sự thay đổi
+        if original_driver_name and driver_name != original_driver_name:
+            self.app.show_toast(f"⚠️ Tự động sửa tài xế gõ sai từ '{original_driver_name}' thành '{driver_name}'")
+            self.driver_entry.delete(0, "end")
+            self.driver_entry.insert(0, driver_name)
 
         # Tái sử dụng driver_map và transport_map từ dispatch_tab để kiểm tra
         if driver_name and (driver_name not in self.app.dispatch_tab.driver_map):

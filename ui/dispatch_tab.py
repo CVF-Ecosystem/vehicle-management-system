@@ -174,12 +174,21 @@ class DispatchTab:
 
     def create_dispatch(self):
         # === PHASE 2.5: Sử dụng entry thay vì combo ===
-        driver_name = self.driver_entry.get().strip()
+        original_driver_name = self.driver_entry.get().strip()
+        from data_normalizer import normalize_driver_name as _norm_name
+        driver_name = _norm_name(original_driver_name)
+        
+        # Hiển thị toast cảnh báo sửa lỗi chính tả nếu có sự thay đổi
+        if original_driver_name and driver_name != original_driver_name:
+            self.app.show_toast(f"⚠️ Tự động sửa tài xế gõ sai từ '{original_driver_name}' thành '{driver_name}'")
+            self.driver_entry.delete(0, "end")
+            self.driver_entry.insert(0, driver_name)
+
         transport_plate = self.transport_entry.get().strip()
 
         if not driver_name or not transport_plate:
             messagebox.showwarning(self.app.get_translation("warn_missing_dispatch_info"), 
-                                   self.app.get_translation("warn_missing_dispatch_info_msg"))
+                                    self.app.get_translation("warn_missing_dispatch_info_msg"))
             return
 
         if driver_name not in self.driver_map:
