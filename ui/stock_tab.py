@@ -484,6 +484,51 @@ class StockTab:
 
         self._run_export_in_thread (do_export, path, start_date, end_date)
 
+    def export_history(self, start_date, end_date):
+        """Xuất lịch sử xe đã xuất bãi trong khoảng thời gian ra Excel."""
+        default_name = utils.get_default_filename(self.app.get_translation("menu_export_history"), ".xlsx")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx")],
+            initialfile=default_name
+        )
+        if not path:
+            return
+
+        def do_export(file_path, start, end):
+            data = self.vehicle_manager.get_shipped_vehicles_history(start, end)
+            cols = {
+                "vin": self.app.get_translation("tree_vin"),
+                "owner": self.app.get_translation("tree_owner"),
+                "vehicle_type": self.app.get_translation("tree_type"),
+                "date_in": self.app.get_translation("tree_date_in"),
+                "date_out": self.app.get_translation("tree_date_out"),
+                "transport_vehicle": self.app.get_translation("tree_transport_vehicle"),
+                "driver_name": self.app.get_translation("tree_driver"),
+                "days_in_stock": self.app.get_translation("excel_days_in_stock"),
+            }
+            result = excel_generator.generate_excel_report(file_path, data, cols)
+
+            if result.get("success"):
+                try:
+                    log_audit(
+                        action=AuditAction.EXPORT,
+                        details={
+                            "source": "StockTab.export_history",
+                            "type": "shipped_history_excel",
+                            "file": file_path,
+                            "date_from": start.isoformat() if hasattr(start, "isoformat") else str(start),
+                            "date_to": end.isoformat() if hasattr(end, "isoformat") else str(end),
+                            "rows": len(data) if isinstance(data, list) else None,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            return result
+
+        self._run_export_in_thread(do_export, path, start_date, end_date)
+
     # === PHASE 2.3: Batch Operations Methods ===
     
     def _on_tree_click(self, event):

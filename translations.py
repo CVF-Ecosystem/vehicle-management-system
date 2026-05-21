@@ -390,7 +390,7 @@ translations = {
     "pdf_total_row": {"vi": "TỔNG CỘNG", "en": "TOTAL"},
     "pdf_col_total_in": {"vi": "TỔNG NHẬP", "en": "TOTAL IN"},
     "pdf_col_total_out": {"vi": "TỔNG XUẤT", "en": "TOTAL OUT"},
-    "pdf_col_stock": {"vi": "TỒN bãi", "en": "IN STOCK"},
+    "pdf_col_stock": {"vi": "TỒN BÃI", "en": "IN STOCK"},
 
 
     # --- Cửa sổ Quản lý Layout ---
@@ -561,7 +561,7 @@ translations = {
     "draft_restore_title": {"vi": "Khôi phục bản nháp", "en": "Restore Draft"},
     "draft_restore_prompt": {"vi": "Phát hiện dữ liệu nhập dở dang:\n\nVIN: {vin}\nChủ hàng: {owner}\nThời gian: {time}\n\nBạn có muốn khôi phục không?", "en": "Found unfinished entry data:\n\nVIN: {vin}\nOwner: {owner}\nTime: {time}\n\nDo you want to restore it?"},
     "confirm_archive_title": {"vi": "Xác nhận Lưu trữ", "en": "Confirm Archive"},
-    "confirm_archive_msg": {"vi": "Bạn có chắc chắn muốn lưu trữ và XÓA vĩnh viễn dữ liệu xe đã xuất từ {start} đến {end} khỏi CSDL chính không?\n\nDữ liệu sẽ được chuyển sang một file lưu trữ riêng và không thể hoàn tác.", "en": "Are you sure you want to archive and PERMANENTLY DELETE exported vehicle data from {start} to {end} from the main database?\n\nData will be moved to a separate archive file and cannot be undone."},
+    "confirm_archive_msg": {"vi": "Bạn có chắc chắn muốn lưu trữ dữ liệu xe đã xuất từ {start} đến {end} không?\n\nXe sẽ bị ẩn khỏi danh sách lịch sử thông thường nhưng VẪN CÒN trong CSDL.\nCó thể hoàn tác bất kỳ lúc nào qua 'Tra cứu dữ liệu lưu trữ'.", "en": "Are you sure you want to archive exported vehicle data from {start} to {end}?\n\nVehicles will be hidden from normal history views but REMAIN in the database.\nThis can be undone at any time via 'Explore Archived Data'."},
     "status_archiving": {"vi": "Đang lưu trữ dữ liệu...", "en": "Archiving data..."},
     "dialog_archive_complete_title": {"vi": "Hoàn tất", "en": "Complete"},
     "err_add_fail": {"vi": "Lỗi thêm xe", "en": "Add Vehicle Error"},

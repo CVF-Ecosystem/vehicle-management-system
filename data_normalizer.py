@@ -47,8 +47,9 @@ class DataNormalizer:
     def __init__(self):
         self.owner_map = self._load_json_map(OWNER_MAP_FILE)
         self.owner_map_valid = self._validate_owner_map()  # RELIABILITY FIX Issue #13
-        # Trong tương lai, bạn có thể thêm các map khác ở đây, ví dụ:
-        # self.type_map = self._load_json_map(TYPE_MAP_FILE)
+        # Danh sách các chủ hàng đã có trong DB — dùng cho phonetic matching tự động
+        # Được nạp sau khi DB sẵn sàng qua set_known_owners()
+        self._known_owners: list[str] = []
 
     def _load_json_map(self, file_path):
         """Tải một file map JSON một cách an toàn."""
@@ -281,6 +282,81 @@ class DataNormalizer:
         
         return normalized
 
+    def set_known_owners(self, owners: list[str]):
+        """
+        Nạp danh sách chủ hàng đã có trong DB.
+        Gọi sau khi khởi tạo VehicleManager để bật phonetic matching tự động.
+        """
+        self._known_owners = [o for o in owners if o]
+        logging.info(f"DataNormalizer: nạp {len(self._known_owners)} chủ hàng để phonetic matching.")
+
+    def _find_canonical_by_phonetic(self, input_name: str) -> str | None:
+        """
+        So sánh phân tích ngũ âm (unidecode) của input_name với danh sách
+        chủ hàng đã có trong DB. Xử lý trường hợp nhập thiếu/sai dấu.
+
+        Ví dụ:
+          'PHU LINH'         -> 'PHÚ LINH'        (100% unidecode match)
+          'PHUONG ANH'       -> 'PHƯƠNG ANH'       (100%)
+          'TRAN THANH HAU'   -> 'TRẦN THANH HẬU'  (100%)
+
+        Threshold mặc định: 0.90 (90% tương đồng)
+        """
+        if not self._known_owners or not input_name:
+            return None
+
+        def _to_phonetic_key(text: str) -> str:
+            """Unidecode + lowercase + bỏ space + bỏ '/'"""
+            return unidecode.unidecode(text.lower()).replace(' ', '').replace('/', '')
+
+        input_key = _to_phonetic_key(input_name)
+        if not input_key:
+            return None
+
+        best_score = 0.0
+        best_match = None
+
+        for canonical in self._known_owners:
+            canonical_key = _to_phonetic_key(canonical)
+            if not canonical_key:
+                continue
+
+            # Loại nhanh: tỷ lệ độ dài quá lệch nhau
+            len_ratio = (
+                min(len(input_key), len(canonical_key))
+                / max(len(input_key), len(canonical_key))
+            )
+            if len_ratio < 0.75:
+                continue
+
+            score = SequenceMatcher(None, input_key, canonical_key).ratio()
+            if score > best_score and score >= 0.90:
+                best_score = score
+                best_match = canonical
+
+        if best_match:
+            logging.debug(
+                f"Phonetic match: '{input_name}' -> '{best_match}' (score: {best_score:.2f})"
+            )
+        return best_match
+
+    def _sanitize_owner_text(self, text: str) -> str:
+        """
+        Làm sạch chuỗi tên chủ hàng:
+        - Xóa khoảng trắng đầu/cuối
+        - Thu gọn nhiều khoảng trắng liên tiếp thành 1
+        - Chuẩn hóa dấu '/': xóa space xung quanh  ("A / B" → "A/B")
+        - Chuyển thành UPPERCASE
+        """
+        if not text:
+            return ""
+        cleaned = text.strip()
+        # Chuẩn hóa khoảng trắng xung quanh dấu '/' hoặc '\\'
+        cleaned = re.sub(r'\s*[/\\]\s*', '/', cleaned)
+        # Thu gọn nhiều space liên tiếp thành 1
+        cleaned = ' '.join(cleaned.split())
+        return cleaned.upper()
+
     def normalize_owner(self, owner_name: str) -> str:
         """
         Chuẩn hóa tên chủ hàng một cách thông minh với fuzzy matching.
@@ -298,10 +374,10 @@ class DataNormalizer:
         
         # Validation check
         if not self.owner_map_valid:
-            return owner_name.strip().upper()
+            return self._sanitize_owner_text(owner_name)
         
-        # Chuẩn hóa input
-        cleaned = owner_name.strip()
+        # Chuẩn hóa input (sanitize trước khi lookup)
+        cleaned = self._sanitize_owner_text(owner_name)
         key_lower = cleaned.lower()
         key_ascii = unidecode.unidecode(key_lower)
         key_no_space = key_lower.replace(" ", "")
@@ -337,13 +413,18 @@ class DataNormalizer:
             if key_ascii_no_space == canonical_ascii.replace(" ", ""):
                 return canonical
         
-        # 5. Fuzzy match - find best similar match
+        # 5. Phonetic match — so sánh unidecode với các chủ hàng đã có trong DB
+        phonetic_match = self._find_canonical_by_phonetic(cleaned)
+        if phonetic_match:
+            return phonetic_match
+
+        # 6. Fuzzy match - find best similar match
         best_match = self._fuzzy_match_owner(key_ascii_no_space)
         if best_match:
             return best_match
-        
-        # 6. Default: uppercase original
-        return cleaned.upper()
+
+        # 7. Default: uppercase original (sanitized)
+        return cleaned
     
     def _fuzzy_match_owner(self, input_key: str, threshold: float = 0.75) -> str | None:
         """
@@ -525,9 +606,9 @@ def normalize_owner(owner_name: str) -> str:
         str: Tên chủ hàng đã được chuẩn hóa
     """
     if not normalizer.owner_map_valid:
-        # Fallback: return cleaned input without mapping
-        logging.debug(f"Owner map invalid - returning cleaned input for: {owner_name}")
-        return owner_name.strip().upper() if owner_name else ""
+        # Fallback: vẫn áp dụng sanitize cơ bản (chuẩn hóa /, khoảng trắng, uppercase)
+        logging.debug(f"Owner map invalid - returning sanitized input for: {owner_name}")
+        return normalizer._sanitize_owner_text(owner_name) if owner_name else ""
     
     return normalizer.normalize_owner(owner_name)
 

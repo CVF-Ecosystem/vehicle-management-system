@@ -153,6 +153,11 @@ class BaseManager:
             self._upgrade_table_if_needed('vehicles', 'deleted_at', 'TEXT')
             self._upgrade_table_if_needed('vehicles', 'deleted_by', 'TEXT')
             self._upgrade_table_if_needed('vehicles', 'delete_reason', 'TEXT')
+
+            # Soft-Archive columns (lưu trữ mềm — không xóa khỏi DB chính)
+            self._upgrade_table_if_needed('vehicles', 'is_archived', 'INTEGER DEFAULT 0')
+            self._upgrade_table_if_needed('vehicles', 'archived_at', 'TEXT')
+            self._upgrade_table_if_needed('vehicles', 'archived_by', 'TEXT')
             
             # Phase 1B: Archive table for permanently deleted vehicles
             self.conn.execute("""
@@ -287,6 +292,10 @@ class BaseManager:
             # Phase 1B: Index for soft delete queries
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_is_deleted ON vehicles (is_deleted)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_deleted_at ON vehicles (deleted_at) WHERE deleted_at IS NOT NULL")
+
+            # Soft-Archive index
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_is_archived ON vehicles (is_archived)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_archived_active ON vehicles (is_archived, status, is_active)")
             
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_locations_full_name ON locations (full_location_name)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_locations_free ON locations (is_occupied, full_location_name)")

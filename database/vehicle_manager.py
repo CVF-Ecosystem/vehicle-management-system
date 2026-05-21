@@ -33,6 +33,128 @@ class VehicleManager(BaseManager):
     def __init__(self):
         super().__init__()
         self.location_manager = LocationManager()
+        # Bước 1: Chuẩn hóa toàn bộ tên chủ hàng cũ trong DB (chạy 1 lần khi khởi động)
+        self._normalize_all_existing_owners()
+        # Bước 2: Nạp danh sách chủ hàng (đã chuẩn) vào normalizer
+        self._refresh_known_owners()
+
+    def _refresh_known_owners(self):
+        """Cập nhật danh sách chủ hàng trong normalizer từ DB hiện tại."""
+        try:
+            from data_normalizer import normalizer as _normalizer
+            cur = self.conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT owner FROM vehicles "
+                "WHERE owner IS NOT NULL AND owner != '' AND is_active = 1 "
+                "ORDER BY owner COLLATE NOCASE"
+            )
+            owners = [row[0] for row in cur.fetchall()]
+            _normalizer.set_known_owners(owners)
+        except Exception as e:
+            logger.warning(f"Không thể nạp danh sách chủ hàng cho normalizer: {e}")
+
+    def _normalize_all_existing_owners(self):
+        """
+        Chuẩn hóa TẤT CẢ tên chủ hàng đang có trong DB khi app khởi động.
+        Xử lý:
+          1. Khoảng trắng quanh '/' : "MINH ĐỨC/ TRẦN" → "MINH ĐỨC/TRẦN"
+          2. Thiếu dấu tiếng Việt  : "PHU LINH" → "PHÚ LINH"
+          3. Không có space trong tên: "TRẦNTHANHHẬU/MINH ĐỨC" → "TRẦN THANH HẬU/MINH ĐỨC"
+
+        Quy tắc chọn tên canonical cho nhóm giống nhau:
+          - Ưu tiên tên có nhiều dấu tiếng Việt hơn (đúng chính tả hơn)
+          - Nếu bằng nhau → ưu tiên tên xuất hiện nhiều bản ghi hơn
+        """
+        try:
+            import unidecode as _unidecode
+            from data_normalizer import normalizer as _normalizer
+            from collections import defaultdict
+
+            cur = self.conn.cursor()
+            # Lấy tất cả owner + số bản ghi (kể cả is_active=0 để chuẩn hóa toàn bộ)
+            cur.execute("""
+                SELECT owner, COUNT(*) as cnt
+                FROM vehicles
+                WHERE owner IS NOT NULL AND owner != ''
+                GROUP BY owner
+                ORDER BY cnt DESC
+            """)
+            owner_counts = [(row[0], row[1]) for row in cur.fetchall()]
+
+            if not owner_counts:
+                return
+
+            def _count_diacritics(text: str) -> int:
+                """Đếm số ký tự có dấu tiếng Việt — nhiều hơn = chính tả đúng hơn."""
+                return sum(1 for c in text if ord(c) > 127)
+
+            def _phonetic_key(text: str) -> str:
+                """Unidecode + lowercase + bỏ space + bỏ '/'"""
+                return _unidecode.unidecode(text.lower()).replace(' ', '').replace('/', '')
+
+            # Bước 1: Sanitize tất cả (fix slash spacing, collapse spaces)
+            sanitized_map = {}  # original → sanitized
+            for owner, _ in owner_counts:
+                sanitized = _normalizer._sanitize_owner_text(owner)
+                if sanitized != owner:
+                    sanitized_map[owner] = sanitized
+
+            # Bước 2: Nhóm theo phonetic key → tìm canonical
+            # Dùng sanitized nếu có, không thì dùng nguyên
+            phonetic_groups = defaultdict(list)  # key → [(effective_owner, diacritics, count)]
+            for owner, count in owner_counts:
+                effective = sanitized_map.get(owner, owner)
+                key = _phonetic_key(effective)
+                phonetic_groups[key].append((effective, _count_diacritics(effective), count))
+
+            # Bước 3: Chọn canonical cho mỗi nhóm (nhiều dấu nhất → nhiều bản ghi nhất)
+            canonical_map = {}  # original_owner → canonical_owner
+            for key, members in phonetic_groups.items():
+                # Sắp xếp: diacritics DESC, count DESC
+                members.sort(key=lambda x: (x[1], x[2]), reverse=True)
+                canonical = members[0][0]
+
+                for effective, _, _ in members:
+                    if effective != canonical:
+                        canonical_map[effective] = canonical
+
+            # Kết hợp: sanitized_map + canonical_map → update_map (original → final)
+            update_map = {}
+            for owner, _ in owner_counts:
+                sanitized = sanitized_map.get(owner, owner)
+                final = canonical_map.get(sanitized, sanitized)
+                if final != owner:
+                    update_map[owner] = final
+
+            if not update_map:
+                logger.info("Owner normalization: không có gì cần cập nhật.")
+                return
+
+            # Bước 4: Áp dụng UPDATE vào DB
+            self.begin_transaction()
+            try:
+                total_updated = 0
+                for old_owner, new_owner in update_map.items():
+                    cur.execute(
+                        "UPDATE vehicles SET owner = ? WHERE owner = ?",
+                        (new_owner, old_owner)
+                    )
+                    rows = cur.rowcount
+                    total_updated += rows
+                    logger.info(
+                        f"  Owner normalized: '{old_owner}' → '{new_owner}' ({rows} bản ghi)"
+                    )
+                self.commit_transaction()
+                logger.info(
+                    f"Owner normalization hoàn tất: "
+                    f"{len(update_map)} biến thể → {total_updated} bản ghi đã cập nhật."
+                )
+            except Exception as e:
+                self.rollback_transaction()
+                logger.error(f"Lỗi khi cập nhật owner normalization: {e}")
+
+        except Exception as e:
+            logger.warning(f"Owner normalization bị bỏ qua (non-critical): {e}")
 
     def _validate_vehicle_data(self, vin: str, owner: str, date_in: datetime = None) -> dict:
         """
@@ -183,7 +305,15 @@ class VehicleManager(BaseManager):
             except Exception as _audit_err:
                 # Audit must never break core flow
                 logger.debug(f"Audit log failed (non-critical): {_audit_err}")
-            return {"success": True, "message": "Thêm xe mới thành công."}
+            # Cập nhật known_owners trong bộ nhớ để phonetic matching tức thì
+            try:
+                from data_normalizer import normalizer as _normalizer
+                if normalized_owner and normalized_owner not in _normalizer._known_owners:
+                    _normalizer._known_owners.append(normalized_owner)
+                    _normalizer._known_owners.sort(key=lambda x: x.lower())
+            except Exception:
+                pass
+            return {"success": True, "message": "Thêm xe mới thành công.", "normalized_owner": normalized_owner}
         
         except VINValidationError as e:
             logger.warning(f"VIN validation error: {e}")
@@ -286,7 +416,7 @@ class VehicleManager(BaseManager):
             SELECT v.*, l.full_location_name
             FROM vehicles v
             LEFT JOIN locations l ON v.location_id = l.id
-            WHERE v.status=? AND v.is_active = 1
+            WHERE v.status=? AND v.is_active = 1 AND (v.is_archived = 0 OR v.is_archived IS NULL)
         """
         params = [STATUS_IN_STOCK]
         if owner_filter:
@@ -320,7 +450,7 @@ class VehicleManager(BaseManager):
 
     def get_in_stock_count(self, owner_filter=None, search_term=None):
         """Đếm tổng số xe tồn kho thỏa mãn điều kiện lọc."""
-        query = "SELECT COUNT(vin) FROM vehicles WHERE status=? AND is_active = 1 AND is_deleted = 0"
+        query = "SELECT COUNT(vin) FROM vehicles WHERE status=? AND is_active = 1 AND is_deleted = 0 AND (is_archived = 0 OR is_archived IS NULL)"
         params = [STATUS_IN_STOCK]
         if owner_filter:
             query += " AND owner = ?"
@@ -367,7 +497,7 @@ class VehicleManager(BaseManager):
 
     def get_shipped_vehicles_history(self, start_date=None, end_date=None):
         """Lấy lịch sử các xe đã xuất trong một khoảng thời gian."""
-        query = "SELECT * FROM vehicles WHERE status=? AND is_active = 1"
+        query = "SELECT * FROM vehicles WHERE status=? AND is_active = 1 AND (is_archived = 0 OR is_archived IS NULL)"
         params = [STATUS_SHIPPED]
         if start_date:
             query += " AND date_out >= ?"
@@ -416,6 +546,7 @@ class VehicleManager(BaseManager):
             cur.execute("""
                 SELECT DISTINCT owner FROM vehicles 
                 WHERE is_active = 1 AND owner IS NOT NULL AND owner != ''
+                AND (is_archived = 0 OR is_archived IS NULL)
             """)
             all_owners = [row['owner'] for row in cur.fetchall()]
             summary = {owner: {'total_in': 0, 'total_out': 0, 'stock': 0} for owner in all_owners}
@@ -466,7 +597,7 @@ class VehicleManager(BaseManager):
         """Lấy tất cả các chủ hàng riêng biệt đã từng tồn tại."""
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT DISTINCT owner FROM vehicles WHERE owner IS NOT NULL AND owner != '' AND is_active = 1 ORDER BY owner COLLATE NOCASE")
+            cur.execute("SELECT DISTINCT owner FROM vehicles WHERE owner IS NOT NULL AND owner != '' AND is_active = 1 AND (is_archived = 0 OR is_archived IS NULL) ORDER BY owner COLLATE NOCASE")
             return [row['owner'] for row in cur.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy danh sách chủ hàng: {e}")
@@ -475,7 +606,7 @@ class VehicleManager(BaseManager):
     def get_distinct_vehicle_types(self, owner_filter=None):
         """Lấy tất cả các loại xe riêng biệt đã từng tồn tại."""
         try:
-            query = "SELECT DISTINCT vehicle_type FROM vehicles WHERE vehicle_type IS NOT NULL AND vehicle_type != '' AND is_active = 1"
+            query = "SELECT DISTINCT vehicle_type FROM vehicles WHERE vehicle_type IS NOT NULL AND vehicle_type != '' AND is_active = 1 AND (is_archived = 0 OR is_archived IS NULL)"
             params = []
             if owner_filter:
                 query += " AND owner = ?"
@@ -493,7 +624,7 @@ class VehicleManager(BaseManager):
         """Chỉ lấy các chủ hàng đang có xe trong kho."""
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT DISTINCT owner FROM vehicles WHERE status = ? AND owner IS NOT NULL AND owner != '' AND is_active = 1 ORDER BY owner COLLATE NOCASE", (STATUS_IN_STOCK,))
+            cur.execute("SELECT DISTINCT owner FROM vehicles WHERE status = ? AND owner IS NOT NULL AND owner != '' AND is_active = 1 AND (is_archived = 0 OR is_archived IS NULL) ORDER BY owner COLLATE NOCASE", (STATUS_IN_STOCK,))
             return [row['owner'] for row in cur.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy danh sách chủ hàng tồn kho: {e}")
@@ -503,7 +634,7 @@ class VehicleManager(BaseManager):
         """Chỉ lấy các loại xe đang có trong kho."""
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT DISTINCT vehicle_type FROM vehicles WHERE status = ? AND vehicle_type IS NOT NULL AND vehicle_type != '' AND is_active = 1 ORDER BY vehicle_type COLLATE NOCASE", (STATUS_IN_STOCK,))
+            cur.execute("SELECT DISTINCT vehicle_type FROM vehicles WHERE status = ? AND vehicle_type IS NOT NULL AND vehicle_type != '' AND is_active = 1 AND (is_archived = 0 OR is_archived IS NULL) ORDER BY vehicle_type COLLATE NOCASE", (STATUS_IN_STOCK,))
             return [row['vehicle_type'] for row in cur.fetchall()]
         except sqlite3.Error as e:
             logger.error(f"Lỗi khi lấy danh sách loại xe tồn kho: {e}")
@@ -920,7 +1051,7 @@ class VehicleManager(BaseManager):
             date_field: "date_in" hoặc "date_out"
             block: Lọc theo block vị trí
         """
-        query = "SELECT v.*, l.full_location_name, l.block FROM vehicles v LEFT JOIN locations l ON v.location_id = l.id WHERE v.is_active = 1"
+        query = "SELECT v.*, l.full_location_name, l.block FROM vehicles v LEFT JOIN locations l ON v.location_id = l.id WHERE v.is_active = 1 AND (v.is_archived = 0 OR v.is_archived IS NULL)"
         params = []
         conditions = []
         
@@ -992,57 +1123,36 @@ class VehicleManager(BaseManager):
             return {"success": False, "message": f"Đã xảy ra lỗi: {e}"}
     def archive_shipped_vehicles(self, start_date, end_date):
         """
-        Di chuyển các xe đã xuất trong một khoảng thời gian từ CSDL chính
-        vào một file CSDL lưu trữ DUY NHẤT.
+        Soft-Archive: Đánh dấu xe đã xuất trong khoảng thời gian là is_archived=1.
+        Dữ liệu KHÔNG bị xóa khỏi DB chính, chỉ bị ẩn khỏi UI thông thường.
+        Hoàn toàn có thể hoàn tấc bằng cách set is_archived=0.
         """
         records_to_archive = self.get_shipped_vehicles_history(start_date, end_date)
-        
+
         if not records_to_archive:
             return {"success": True, "message": "Không có dữ liệu nào để lưu trữ trong khoảng thời gian đã chọn.", "count": 0}
 
-        # === LOGIC MỚI: Luôn sử dụng một file archive duy nhất ===
-        os.makedirs(ARCHIVES_DIR, exist_ok=True)
-        archive_db_path = os.path.join(ARCHIVES_DIR, f"{os.path.splitext(os.path.basename(DB_FILE))[0]}_ARCHIVE.db")
-        # =======================================================
-        
-        archive_conn = None
+        vins_to_archive = [dict(r)['vin'] for r in records_to_archive]
+        archived_at = datetime.now(timezone.utc).isoformat()
+
+        # Lấy username người dùng hiện tại
         try:
-            archive_conn = self.get_new_connection(archive_db_path)
-            if not archive_conn:
-                return {"success": False, "message": "Không thể tạo hoặc kết nối đến file CSDL lưu trữ."}
+            from auth.auth_manager import AuthManager
+            current_user = AuthManager.get_instance().get_current_user()
+            archived_by = current_user['username'] if current_user else 'system'
+        except Exception:
+            archived_by = 'system'
 
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='vehicles'")
-            create_table_sql = cursor.fetchone()['sql']
-            archive_conn.execute(create_table_sql) # Lệnh này sẽ không làm gì nếu bảng đã tồn tại
-            archive_conn.commit()
-
-            self.begin_transaction()
-            archive_conn.execute("BEGIN TRANSACTION")
-
-            vins_to_delete = []
-            for record in records_to_archive:
-                record_dict = dict(record)
-                vins_to_delete.append(record_dict['vin'])
-                
-                record_keys = [key for key in record_dict.keys() if key in record.keys()]
-                
-                columns = ', '.join(record_keys)
-                placeholders = ', '.join(['?'] * len(record_keys))
-                # Sử dụng INSERT OR IGNORE để tránh lỗi nếu cố gắng lưu trữ lại một bản ghi đã có
-                sql = f'INSERT OR IGNORE INTO vehicles ({columns}) VALUES ({placeholders})'
-                
-                values_tuple = tuple(record_dict[key] for key in record_keys)
-                archive_conn.execute(sql, values_tuple)
-
-            if vins_to_delete:
-                placeholders = ', '.join(['?'] * len(vins_to_delete))
-                self.conn.execute(f"DELETE FROM vehicles WHERE vin IN ({placeholders})", vins_to_delete)
-
+        self.begin_transaction()
+        try:
+            placeholders = ', '.join(['?'] * len(vins_to_archive))
+            self.conn.execute(
+                f"UPDATE vehicles SET is_archived = 1, archived_at = ?, archived_by = ? WHERE vin IN ({placeholders})",
+                [archived_at, archived_by] + vins_to_archive
+            )
             self.commit_transaction()
-            archive_conn.commit()
 
-            logger.info(f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi vào file: {archive_db_path}")
+            logger.info(f"Đã soft-archive {len(vins_to_archive)} xe (is_archived=1). Archived_by: {archived_by}")
 
             try:
                 log_audit(
@@ -1051,27 +1161,69 @@ class VehicleManager(BaseManager):
                     record_id=f"date_out:{start_date.isoformat()}:{end_date.isoformat()}",
                     details={
                         "source": "VehicleManager.archive_shipped_vehicles",
+                        "method": "soft_archive",
                         "date_from": start_date.isoformat(),
                         "date_to": end_date.isoformat(),
-                        "count": len(vins_to_delete),
-                        "archive_db_path": archive_db_path,
-                        "vins_sample": vins_to_delete[:50],
+                        "count": len(vins_to_archive),
+                        "archived_by": archived_by,
+                        "vins_sample": vins_to_archive[:50],
                     },
                 )
             except Exception as _audit_err:
                 logger.debug(f"Audit log failed (non-critical): {_audit_err}")
 
-            return {"success": True, "message": f"Đã lưu trữ thành công {len(vins_to_delete)} bản ghi.", "count": len(vins_to_delete)}
+            return {"success": True, "message": f"Đã lưu trữ thành công {len(vins_to_archive)} bản ghi.", "count": len(vins_to_archive)}
 
         except Exception as e:
-            if self.conn: self.rollback_transaction()
-            if archive_conn: archive_conn.rollback()
-            logger.exception("Lỗi trong quá trình lưu trữ dữ liệu.")
-            return {"success": False, "message": f"Lỗi lưu trữ: {e}"}
-        
-        finally:
-            if archive_conn:
-                archive_conn.close()
+            self.rollback_transaction()
+            logger.exception("Ời trong quá trình soft-archive dữ liệu.")
+            return {"success": False, "message": f"Ời lưu trữ: {e}"}
+
+    def unarchive_vehicles(self, start_date, end_date):
+        """
+        Hoàn tấc soft-archive: đặt lại is_archived=0 cho xe trong khoảng thời gian.
+        """
+        self.begin_transaction()
+        try:
+            self.conn.execute(
+                "UPDATE vehicles SET is_archived = 0, archived_at = NULL, archived_by = NULL "
+                "WHERE is_archived = 1 AND date_out BETWEEN ? AND ?",
+                [start_date.isoformat(), end_date.replace(hour=23, minute=59, second=59).isoformat()]
+            )
+            count = self.conn.execute(
+                "SELECT changes()"
+            ).fetchone()[0]
+            self.commit_transaction()
+            logger.info(f"Đã hoàn tấc {count} xe khỏi trạng thái archive.")
+            return {"success": True, "message": f"Đã hoàn tấc {count} bản ghi.", "count": count}
+        except Exception as e:
+            self.rollback_transaction()
+            return {"success": False, "message": str(e)}
+
+    def get_archived_vehicles_from_main_db(self, start_date=None, end_date=None, owner_filter=None):
+        """
+        Đọc xe đã soft-archive từ DB chính (is_archived=1).
+        """
+        query = "SELECT * FROM vehicles WHERE is_archived = 1"
+        params = []
+        if start_date:
+            query += " AND date_out >= ?"
+            params.append(start_date.isoformat())
+        if end_date:
+            end_inclusive = end_date.replace(hour=23, minute=59, second=59)
+            query += " AND date_out <= ?"
+            params.append(end_inclusive.isoformat())
+        if owner_filter:
+            query += " AND owner = ?"
+            params.append(owner_filter)
+        query += " ORDER BY archived_at DESC"
+        try:
+            cur = self.conn.cursor()
+            cur.execute(query, params)
+            return {"success": True, "data": [dict(r) for r in cur.fetchall()]}
+        except Exception as e:
+            logger.exception("Lỗi khi lấy dữ liệu archive từ DB chính")
+            return {"success": False, "data": [], "message": str(e)}
 
     # === HÀM MỚI: Để đọc dữ liệu từ file archive ===
     def get_archived_vehicles(self, archive_path, start_date, end_date):
