@@ -171,9 +171,9 @@ class StockTab:
         self.tree.heading("owner", text=self.app.get_translation("tree_owner"))
         self.tree.heading("location", text=self.app.get_translation("tree_location"))
         self.tree.heading("date_in", text=self.app.get_translation("tree_date_in"))
-        self.tree.heading("so_cont", text="Số Cont")
-        self.tree.heading("tau", text="Tàu")
-        self.tree.heading("chuyen", text="Chuyến")
+        self.tree.heading("so_cont", text="SỐ CONT")
+        self.tree.heading("tau", text="TÀU")
+        self.tree.heading("chuyen", text="CHUYẾN")
 
         self.context_menu.delete(0, "end")
         self.context_menu.add_command(label=self.app.get_translation("ctx_menu_edit"), command=self.edit_selected_vehicle)
