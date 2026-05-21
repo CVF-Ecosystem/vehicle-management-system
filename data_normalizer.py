@@ -50,6 +50,8 @@ class DataNormalizer:
         # Danh sách các chủ hàng đã có trong DB — dùng cho phonetic matching tự động
         # Được nạp sau khi DB sẵn sàng qua set_known_owners()
         self._known_owners: list[str] = []
+        # Danh sách các tài xế đã có trong DB — dùng cho phonetic matching tài xế
+        self._known_drivers: list[str] = []
 
     def _load_json_map(self, file_path):
         """Tải một file map JSON một cách an toàn."""
@@ -542,6 +544,75 @@ class DataNormalizer:
             return ""
         return type_name.strip().upper()
 
+    def set_known_drivers(self, drivers: list[str]):
+        """
+        Nạp danh sách tài xế đã có trong DB.
+        """
+        self._known_drivers = [d for d in drivers if d]
+        logging.info(f"DataNormalizer: nạp {len(self._known_drivers)} tài xế để phonetic matching.")
+
+    def _sanitize_driver_text(self, text: str) -> str:
+        """Làm sạch chuỗi tên tài xế: trim, collapse space, UPPERCASE."""
+        if not text:
+            return ""
+        # Thu gọn nhiều space liên tiếp thành 1
+        cleaned = ' '.join(text.strip().split())
+        return cleaned.upper()
+
+    def _find_canonical_driver_by_phonetic(self, input_name: str) -> str | None:
+        """
+        So sánh phân tích ngũ âm (unidecode) của input_name với danh sách tài xế trong DB.
+        Giúp gộp các cách viết sai dấu, thiếu dấu, viết thường thành viết hoa chuẩn.
+        """
+        if not self._known_drivers or not input_name:
+            return None
+
+        def _to_phonetic_key(text: str) -> str:
+            return unidecode.unidecode(text.lower()).replace(' ', '')
+
+        input_key = _to_phonetic_key(input_name)
+        if not input_key:
+            return None
+
+        best_score = 0.0
+        best_match = None
+
+        for canonical in self._known_drivers:
+            canonical_key = _to_phonetic_key(canonical)
+            if not canonical_key:
+                continue
+
+            len_ratio = min(len(input_key), len(canonical_key)) / max(len(input_key), len(canonical_key))
+            if len_ratio < 0.75:
+                continue
+
+            score = SequenceMatcher(None, input_key, canonical_key).ratio()
+            if score > best_score and score >= 0.90:
+                best_score = score
+                best_match = canonical
+
+        if best_match:
+            logging.debug(f"Driver phonetic match: '{input_name}' -> '{best_match}' (score: {best_score:.2f})")
+        return best_match
+
+    def normalize_driver_name(self, driver_name: str) -> str:
+        """
+        Chuẩn hóa tên tài xế:
+        1. Sanitize cơ bản
+        2. Tìm phonetic match trong DB để tự động sửa dấu/viết hoa chuẩn
+        """
+        if not driver_name:
+            return ""
+        
+        cleaned = self._sanitize_driver_text(driver_name)
+        
+        # Thử phonetic match với các tài xế hiện có
+        phonetic_match = self._find_canonical_driver_by_phonetic(cleaned)
+        if phonetic_match:
+            return phonetic_match
+            
+        return cleaned
+
 # Tạo một instance duy nhất (Singleton pattern) để toàn bộ ứng dụng có thể
 # import và sử dụng mà không cần khởi tạo lại.
 normalizer = DataNormalizer()
@@ -626,3 +697,12 @@ def normalize_vehicle_type(type_name: str) -> str:
         str: Loại xe đã được chuẩn hóa
     """
     return normalizer.normalize_vehicle_type(type_name)
+
+
+def normalize_driver_name(driver_name: str) -> str:
+    """
+    Chuẩn hóa tên tài xế.
+    
+    Wrapper function cho DataNormalizer.normalize_driver_name()
+    """
+    return normalizer.normalize_driver_name(driver_name)
