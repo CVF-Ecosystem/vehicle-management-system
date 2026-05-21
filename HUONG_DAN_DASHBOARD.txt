@@ -21,19 +21,21 @@ Nếu máy chưa có Python, tải tại:
 
 Mở Command Prompt (cmd) và chạy lệnh:
 
-    pip install streamlit plotly
+    pip install flask pandas openpyxl
 
-Chờ khoảng 2-5 phút để cài xong.
+Chờ khoảng 30 giây đến 1 phút là xong (nhẹ hơn nhiều so với trước).
 
 --------------------------------------------------------------------
-  BƯỚC 2: Kiểm tra file web_dashboard.py
+  BƯỚC 2: Kiểm tra file đi kèm
 --------------------------------------------------------------------
 
-Đảm bảo file web_dashboard.py nằm CÙNG THƯ MỤC với VehicleManagement.exe:
+Đảm bảo các file sau nằm CÙNG THƯ MỤC với VehicleManagement.exe:
 
     📁 Thư mục bạn đang dùng/
     ├── VehicleManagement.exe      ← ứng dụng chính
-    └── web_dashboard.py           ← file dashboard (PHẢI có ở đây)
+    ├── dashboard_api.py           ← server Flask (PHẢI có)
+    ├── dashboard.html             ← giao diện dashboard (PHẢI có)
+    └── assets/                    ← thư mục logo (nếu có)
 
 --------------------------------------------------------------------
   BƯỚC 3: Sử dụng
@@ -42,30 +44,35 @@ Chờ khoảng 2-5 phút để cài xong.
 1. Mở VehicleManagement.exe như bình thường
 2. Đăng nhập vào ứng dụng
 3. Bấm nút "🌐 Web Dashboard" ở góc trên bên phải
-4. Trình duyệt sẽ tự mở tại địa chỉ: http://localhost:8501
+4. Trình duyệt sẽ tự mở (thường trong vòng 1-2 giây)
+
+Lần đầu mở sẽ cần kết nối Internet để tải biểu đồ (React/Recharts).
+Từ lần sau nếu trình duyệt đã cache thì không cần Internet nữa.
 
 --------------------------------------------------------------------
   XỬ LÝ LỖI THƯỜNG GẶP
 --------------------------------------------------------------------
 
-Lỗi: "Streamlit chưa được cài đặt"
-  → Chạy lại: pip install streamlit plotly
+Lỗi: "Không tìm thấy file dashboard_api.py"
+  → Kiểm tra file dashboard_api.py có cùng thư mục với EXE không
 
-Lỗi: "Không tìm thấy file web_dashboard.py"
-  → Kiểm tra file web_dashboard.py có cùng thư mục với EXE không
+Lỗi: "No module named flask"
+  → Chạy lại: pip install flask
 
 Lỗi: "Port đã được sử dụng"
   → Đóng trình duyệt, bấm "⏹ Dừng" rồi mở lại
 
-Lỗi màn hình trắng trong trình duyệt
-  → Chờ 5-10 giây rồi F5 để tải lại
+Lỗi màn hình trắng / biểu đồ không hiện
+  → Kiểm tra kết nối Internet (lần đầu cần tải React từ CDN)
+  → Hoặc F5 để tải lại trang
 
 --------------------------------------------------------------------
   LƯU Ý
 --------------------------------------------------------------------
 
 • Web Dashboard chỉ xem được trên máy cài đặt (localhost)
-• Không cần kết nối Internet để sử dụng
+• Lần đầu cần Internet để tải biểu đồ (React/Recharts từ CDN)
+• Từ lần 2 trở đi trình duyệt tự cache, không cần Internet nữa
 • Dữ liệu hiển thị từ database của ứng dụng chính
 • Đóng ứng dụng chính sẽ tự động tắt Web Dashboard
 

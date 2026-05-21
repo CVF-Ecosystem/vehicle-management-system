@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Management Dashboard · Saigon Port</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+    html,body,#root { height:100%; }
+    body { font-family:'Inter',sans-serif; background:#f0f3fb; overflow:hidden; }
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
+    .hrow:hover { background:#eef3ff !important; }
+    .trow-even { background:#f7faff; }
+    .qbtn { transition:all .15s ease; }
+    .qbtn:hover { opacity:.85; }
+    input,select,button,textarea { font-family:inherit; }
+    select option { background:#0f2354; color:white; }
+    .kpi-card { transition:transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .22s ease; }
+    .kpi-card:hover { transform:translateY(-3px) scale(1.015); box-shadow:0 14px 32px rgba(15,23,42,.12),0 4px 12px rgba(15,23,42,.08) !important; }
+    .export-btn { transition:all .15s ease !important; }
+    .export-btn:hover { background:#15803d !important; transform:translateY(-1px); box-shadow:0 4px 14px rgba(22,163,74,.45) !important; }
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+    .chart-enter { animation:fadeInUp .45s cubic-bezier(.22,1,.36,1) both; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter:invert(1); opacity:0.55; cursor:pointer; margin-left:2px; }
+    input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:0.9; }
+    input[type="date"]::-webkit-datetime-edit { color:white; }
+    input[type="date"]::-webkit-datetime-edit-fields-wrapper { color:rgba(255,255,255,0.85); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    (function() {
+      const _err = console.error.bind(console);
+      console.error = (...a) => { if (typeof a[0]==='string' && a[0].includes('defaultProps')) return; _err(...a); };
+    })();
+
+    const { useState, useEffect, useCallback } = React;
+    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+            PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer } = Recharts;
+
+    /* ═══════════════════ DESIGN TOKENS ═════════════════ */
+    const C = { nhap:'#3b82f6', xuat:'#ef4444', ton:'#10b981', total:'#7c3aed', da:'#f59e0b' };
+    const DC = ['#10b981','#3b82f6','#f59e0b','#8b5cf6','#e63946','#06b6d4','#ec4899'];
+    const card = { background:'white', borderRadius:14, border:'1px solid #e4e9f2', boxShadow:'0 2px 8px rgba(15,23,42,.07),0 1px 3px rgba(15,23,42,.04)' };
+    const TWEAK_DEFAULTS = { theme:'navy', chartMode:'stacked', showTrend:true };
+
+    /* ═══════════════════ EMPTY DEFAULTS ════════════════ */
+    const EMPTY_KPI = { total:0, nhap:0, xuat:0, ton:0, daXuat:0 };
+
+    /* ═══════════════════ DATE HELPERS ══════════════════ */
+    const fmtDate = d => {
+      const day   = String(d.getDate()).padStart(2,'0');
+      const month = String(d.getMonth()+1).padStart(2,'0');
+      return `${day}/${month}/${d.getFullYear()}`;
+    };
+    const parseVi = s => {
+      const p = (s||'').split('/');
+      return p.length===3 ? `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}` : '';
+    };
+    const isoToVi = s => {
+      const p = (s||'').split('-');
+      return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : '';
+    };
+
+    /* ═══════════════════ EXCEL EXPORT ═════════════════ */
+    const exportExcel = (kpi, owners, daily, vehicleTypes, longstock) => {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{
+        'Tổng xe ':kpi.total, 'Nhập trong kỳ':kpi.nhap,
+        'Xuất trong kỳ':kpi.xuat, 'Đang tồn':kpi.ton, 'Đã xuất':kpi.daXuat,
+      }]), 'KPI Tổng quan');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+        owners.map(r => ({'Chủ hàng':r.name,'Nhập trong kỳ':r.nhap,'Xuất trong kỳ':r.xuat,'Tồn hiện tại':r.ton}))
+      ), 'Theo Chủ hàng');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+        daily.map(r => ({'Ngày':r.d,'Nhập':r.n,'Xuất':r.x,'Chênh lệch':r.n-r.x}))
+      ), 'Biến động ngày');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+        vehicleTypes.map(r => ({'Loại xe':r.type,'Số lượng đang tồn':r.count}))
+      ), 'Theo loại xe');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+        longstock.map(r => ({'VIN':r.vin,'Chủ hàng':r.owner,'Loại xe':r.type,'Ngày nhập':r.date,'Số ngày tồn':r.days,'Block':r.blk,'Vị trí':r.slot}))
+      ), 'Xe tồn lâu');
+      XLSX.writeFile(wb, `BaoCao_VehicleManagement_${new Date().toLocaleDateString('vi-VN').replace(/\//g,'-')}.xlsx`);
+    };
+
+    /* ═══════════════════ SIDEBAR ════════════════════════ */
+    const SIDEBAR_THEMES = {
+      navy:     'linear-gradient(175deg,#0c1d46 0%,#142d5a 55%,#1a3a6b 100%)',
+      graphite: 'linear-gradient(175deg,#0f1117 0%,#1c1c2e 55%,#252540 100%)',
+      forest:   'linear-gradient(175deg,#052e16 0%,#064e3b 55%,#065f46 100%)',
+    };
+
+    const Sidebar = ({ filter, df, setDf, dt, setDt, owner, setOwner, onRefresh, now, theme, meta, onFilterPreset }) => {
+      const bg  = SIDEBAR_THEMES[theme] || SIDEBAR_THEMES.navy;
+      const inp = { width:'100%', padding:'8px 10px', background:'rgba(255,255,255,0.09)', border:'1px solid rgba(255,255,255,0.16)', borderRadius:8, color:'white', fontSize:13, outline:'none' };
+      const sl  = (icon, text) => (
+        <div style={{ color:'rgba(255,255,255,0.38)', fontSize:10, fontWeight:700, letterSpacing:'0.09em', textTransform:'uppercase', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
+          <span>{icon}</span><span>{text}</span>
+        </div>
+      );
+      const divider = <div style={{ height:1, background:'rgba(255,255,255,0.07)', margin:'6px 0 12px' }} />;
+      const ownerList = ['Tất cả', ...(meta.owners || [])];
+
+      return (
+        <div style={{ width:262, minWidth:262, height:'100vh', background:bg, display:'flex', flexDirection:'column', overflow:'auto', flexShrink:0 }}>
+          {/* Brand */}
+          <div style={{ padding:'18px 18px 14px', borderBottom:'1px solid rgba(255,255,255,0.09)', display:'flex', alignItems:'center', gap:11 }}>
+            <div style={{ width:42, height:42, borderRadius:9, background:'white', padding:3, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 8px rgba(0,0,0,.2)' }}>
+              <img src="assets/Logo.jpg" alt="CSG" style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}
+                onError={e => { e.target.style.display='none'; e.target.parentElement.innerHTML='<span style="font-size:20px">🚗</span>'; }} />
+            </div>
+            <div>
+              <div style={{ color:'white', fontWeight:700, fontSize:13.5, lineHeight:1.2 }}>Vehicle Management</div>
+              <div style={{ color:'rgba(255,255,255,0.38)', fontSize:10, letterSpacing:'0.07em', marginTop:2 }}>SAIGON PORT · SINCE 1863</div>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div style={{ flex:1, padding:'16px 16px 0', display:'flex', flexDirection:'column', gap:0 }}>
+            {sl('⚡','Lọc nhanh')}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5, marginBottom:16 }}>
+              {[['7 ngày','7d'],['30 ngày','30d'],['90 ngày','90d'],['Tất cả','all']].map(([l,v]) => (
+                <button key={v} className="qbtn" onClick={() => onFilterPreset(v)}
+                  style={{ padding:'7px 4px', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:filter===v?700:400,
+                           border:filter===v?'1px solid rgba(96,165,250,0.75)':'1px solid rgba(255,255,255,0.11)',
+                           background:filter===v?'rgba(59,130,246,0.28)':'rgba(255,255,255,0.05)',
+                           color:filter===v?'#93c5fd':'rgba(255,255,255,0.6)' }}>{l}</button>
+              ))}
+            </div>
+
+            {divider}
+            {sl('📅','bãiảng thời gian')}
+            <div style={{ display:'flex', flexDirection:'column', gap:7, marginBottom:16 }}>
+              <div>
+                <div style={{ color:'rgba(255,255,255,0.35)', fontSize:11, marginBottom:3 }}>Từ ngày</div>
+                <input type="date" value={parseVi(df)}
+                  min={meta.dateRange?.min ? parseVi(meta.dateRange.min) : ''}
+                  max={meta.dateRange?.max ? parseVi(meta.dateRange.max) : ''}
+                  onChange={e => setDf(isoToVi(e.target.value))}
+                  style={{ ...inp, colorScheme:'dark', cursor:'pointer' }} />
+              </div>
+              <div>
+                <div style={{ color:'rgba(255,255,255,0.35)', fontSize:11, marginBottom:3 }}>Đến ngày</div>
+                <input type="date" value={parseVi(dt)}
+                  min={meta.dateRange?.min ? parseVi(meta.dateRange.min) : ''}
+                  max={meta.dateRange?.max ? parseVi(meta.dateRange.max) : ''}
+                  onChange={e => setDt(isoToVi(e.target.value))}
+                  style={{ ...inp, colorScheme:'dark', cursor:'pointer' }} />
+              </div>
+              {meta.dateRange && meta.dateRange.min && (
+                <div style={{ display:'flex', gap:6, alignItems:'flex-start', marginTop:2 }}>
+                  <span style={{ color:'rgba(255,255,255,0.25)', fontSize:10, marginTop:1 }}>📊</span>
+                  <span style={{ color:'rgba(255,255,255,0.28)', fontSize:10.5, lineHeight:1.5 }}>
+                    Dữ liệu từ: {meta.dateRange.min}<br/>đến {meta.dateRange.max}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {divider}
+            {sl('👤','Chủ hàng')}
+            <div style={{ marginBottom:16 }}>
+              <select value={owner} onChange={e => setOwner(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+                {ownerList.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+
+            {divider}
+            <button onClick={onRefresh}
+              style={{ padding:'10px 0', borderRadius:9, border:'1px solid rgba(255,255,255,0.14)',
+                       background:'rgba(59,130,246,0.2)', color:'rgba(255,255,255,0.85)', fontSize:13,
+                       fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
+              🔄 Làm mới dữ liệu
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding:'12px 16px 16px', borderTop:'1px solid rgba(255,255,255,0.06)', marginTop:14 }}>
+            <div style={{ color:'rgba(255,255,255,0.25)', fontSize:10.5 }}>🕐 {now}</div>
+            <div style={{ color:'rgba(255,255,255,0.18)', fontSize:10, marginTop:3 }}>
+              Vehicle Management System {meta.version || 'V1.0'} 
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════ KPI CARDS ══════════════════════ */
+    const KPICard = ({ title, value, icon, col, bg, sub }) => (
+      <div className="kpi-card" style={{ ...card, flex:1, minWidth:0, padding:'16px 18px', borderLeft:`3px solid ${col}`, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:-14, right:-10, fontSize:48, opacity:.04, userSelect:'none' }}>{icon}</div>
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:11 }}>
+          <div style={{ fontSize:11.5, fontWeight:500, color:'#64748b', lineHeight:1.4, paddingRight:4 }}>{title}</div>
+          <div style={{ width:31, height:31, borderRadius:8, background:bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>{icon}</div>
+        </div>
+        <div style={{ fontSize:28, fontWeight:800, color:'#0f172a', letterSpacing:'-0.03em', lineHeight:1 }}>
+          {typeof value==='number' ? value.toLocaleString('vi-VN') : value}
+        </div>
+        {sub && <div style={{ fontSize:11, color:'#94a3b8', marginTop:5 }}>{sub}</div>}
+      </div>
+    );
+
+    const KPIRow = ({ kpi }) => (
+      <div style={{ display:'flex', gap:12 }}>
+        {[
+          { title:'Tổng xe', value:kpi.total,  icon:'🚗', col:C.total, bg:'#f5f3ff', sub:'Tất cả thời gian' },
+          { title:'Nhập trong kỳ',     value:kpi.nhap,   icon:'📥', col:C.nhap,  bg:'#eff6ff', sub:'Xe nhập trong kỳ' },
+          { title:'Xuất trong kỳ',     value:kpi.xuat,   icon:'📤', col:C.xuat,  bg:'#fff1f2', sub:'Xe xuất trong kỳ' },
+          { title:'Đang tồn bãi ',       value:kpi.ton,    icon:'🏭', col:C.ton,   bg:'#ecfdf5', sub:'Xe hiện trong bãi' },
+          { title:'Đã xuất',     value:kpi.daXuat, icon:'🚛', col:C.da,    bg:'#fffbeb', sub:'Tổng xe đã giao' },
+        ].map((c,i) => <KPICard key={i} {...c} />)}
+      </div>
+    );
+
+    /* ─── Section header ─────────────────────────────────── */
+    const SectionHeader = ({ icon, title, sub }) => (
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, marginTop:4 }}>
+        <div style={{ width:3, height:24, borderRadius:2, background:'linear-gradient(180deg,#3b82f6,#7c3aed)', flexShrink:0 }} />
+        <div>
+          <div style={{ fontSize:13.5, fontWeight:700, color:'#0f172a', display:'flex', alignItems:'center', gap:6 }}>
+            <span>{icon}</span><span>{title}</span>
+          </div>
+          {sub && <div style={{ fontSize:11.5, color:'#94a3b8', marginTop:1 }}>{sub}</div>}
+        </div>
+      </div>
+    );
+
+    /* ═══════════════════ BAR CHART ══════════════════════ */
+    const BarTip = ({ active, payload, label }) => {
+      if (!active || !payload?.length) return null;
+      const total = payload.reduce((s,p) => s+(p.value||0), 0);
+      return (
+        <div style={{ background:'white', borderRadius:13, overflow:'hidden', boxShadow:'0 10px 32px rgba(15,23,42,.14),0 2px 8px rgba(15,23,42,.08)', minWidth:196 }}>
+          <div style={{ background:'linear-gradient(135deg,#f8faff,#eef2ff)', padding:'9px 14px', borderBottom:'1px solid #e4e8f8' }}>
+            <div style={{ fontWeight:700, color:'#0f172a', fontSize:13 }}>{label}</div>
+          </div>
+          <div style={{ padding:'10px 14px' }}>
+            {payload.map((p,i) => (
+              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:18, marginBottom:i<payload.length-1?7:0 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:p.color, flexShrink:0 }} />
+                  <span style={{ fontSize:12.5, color:'#64748b' }}>{p.name}</span>
+                </div>
+                <span style={{ fontWeight:700, color:'#0f172a', fontSize:13 }}>{p.value.toLocaleString()}</span>
+              </div>
+            ))}
+            {payload.length>1 && (
+              <div style={{ borderTop:'1px solid #f1f5f9', marginTop:8, paddingTop:8, display:'flex', justifyContent:'space-between' }}>
+                <span style={{ fontSize:11, color:'#94a3b8', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tổng</span>
+                <span style={{ fontWeight:800, color:'#0f172a', fontSize:13.5 }}>{total.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    const OwnerBarChart = ({ data, sel, mode }) => {
+      const d = sel!=='Tất cả' ? data.filter(r => r.name===sel) : data;
+      return (
+        <div style={{ ...card, padding:'20px 22px', height:'100%', display:'flex', flexDirection:'column' }}>
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>📊 Số lượng xe</div>
+            <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Phân tích nhập / xuất / tồn trong kỳ</div>
+          </div>
+          <div style={{ flex:1 }}>
+            <ResponsiveContainer width="100%" height={305}>
+              <BarChart data={d} margin={{ top:6, right:8, left:-8, bottom:46 }} barCategoryGap="22%" barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize:10.5, fill:'#64748b', fontFamily:'Inter' }} angle={-32} textAnchor="end" interval={0} height={54} axisLine={false} />
+                <YAxis tick={{ fontSize:10.5, fill:'#94a3b8', fontFamily:'Inter' }} axisLine={false} tickLine={false} />
+                <Tooltip content={<BarTip />} cursor={{ fill:'rgba(0,0,0,.03)' }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize:12, paddingTop:8, fontFamily:'Inter' }} />
+                <Bar dataKey="nhap" name="Nhập" fill={C.nhap} radius={[3,3,0,0]} isAnimationActive animationDuration={700}  animationEasing="ease-out" stackId={mode==='stacked'?'a':undefined} />
+                <Bar dataKey="xuat" name="Xuất" fill={C.xuat} radius={[3,3,0,0]} isAnimationActive animationDuration={800}  animationEasing="ease-out" stackId={mode==='stacked'?'a':undefined} />
+                <Bar dataKey="ton"  name="Tồn"  fill={C.ton}  radius={[3,3,0,0]} isAnimationActive animationDuration={900}  animationEasing="ease-out" stackId={mode==='stacked'?'a':undefined} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════ DONUT CHART ════════════════════ */
+    const DonutChart = ({ data }) => {
+      const items = data.filter(d => d.ton>0);
+      const total = items.reduce((s,d) => s+d.ton, 0);
+      const pd_   = items.map(d => ({ name:d.name, value:d.ton, pct:((d.ton/total)*100).toFixed(1) }));
+      const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+        if (percent<0.06) return null;
+        const R = Math.PI/180, r = innerRadius+(outerRadius-innerRadius)*0.55;
+        return <text x={cx+r*Math.cos(-midAngle*R)} y={cy+r*Math.sin(-midAngle*R)} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>{`${(percent*100).toFixed(0)}%`}</text>;
+      };
+      return (
+        <div style={{ ...card, padding:'20px 22px', height:'100%', display:'flex', flexDirection:'column' }}>
+          <div style={{ marginBottom:10 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>🥧 Tỷ lệ tồn bãi</div>
+            <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Phân bố xe đang trong bãi</div>
+          </div>
+          <div style={{ position:'relative', flexShrink:0 }}>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pd_} cx="50%" cy="50%" innerRadius={52} outerRadius={86} paddingAngle={2} dataKey="value"
+                     isAnimationActive animationDuration={900} animationEasing="ease-out" labelLine={false} label={renderLabel}>
+                  {pd_.map((_,i) => <Cell key={i} fill={DC[i%DC.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v,n) => [`${v} xe`,n]} contentStyle={{ borderRadius:8, border:'1px solid #e2e8f0', fontSize:12, fontFamily:'Inter' }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize:26, fontWeight:800, color:'#0f172a', letterSpacing:'-0.03em' }}>{total}</div>
+                <div style={{ fontSize:10, color:'#94a3b8', fontWeight:500, marginTop:1 }}>Tổng tồn</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ flex:1, overflowY:'auto', marginTop:10 }}>
+            {pd_.map((d,i) => (
+              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 2px', borderBottom:i<pd_.length-1?'1px solid #f8fafc':'none' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:DC[i%DC.length], flexShrink:0 }} />
+                  <span style={{ fontSize:12, color:'#374151', fontWeight:500 }}>{d.name}</span>
+                </div>
+                <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                  <span style={{ fontSize:12.5, fontWeight:700, color:'#0f172a' }}>{d.value}</span>
+                  <span style={{ fontSize:11, color:'#94a3b8', minWidth:38, textAlign:'right' }}>{d.pct}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════ TREND CHART ════════════════════ */
+    const TrendChart = ({ show, daily }) => {
+      if (!show) return null;
+      const totalNhap = daily.reduce((s,d) => s+d.n, 0);
+      const totalXuat = daily.reduce((s,d) => s+d.x, 0);
+      return (
+        <div style={{ ...card, padding:'20px 22px', marginTop:14 }}>
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>📈 Biến động nhập / xuất hàng ngày</div>
+            <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Thống kê theo ngày đã chọn</div>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={daily} margin={{ top:4, right:12, left:-8, bottom:0 }}>
+              <defs>
+                <linearGradient id="gNhap" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={C.nhap} stopOpacity={0.18} />
+                  <stop offset="95%" stopColor={C.nhap} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gXuat" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={C.xuat} stopOpacity={0.18} />
+                  <stop offset="95%" stopColor={C.xuat} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="d" tick={{ fontSize:10, fill:'#94a3b8', fontFamily:'Inter' }} interval={2} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize:10, fill:'#94a3b8', fontFamily:'Inter' }} axisLine={false} tickLine={false}
+                label={{ value:'Số lượng xe', angle:-90, position:'insideLeft', offset:18, style:{ fontSize:10, fill:'#94a3b8' } }} />
+              <Tooltip contentStyle={{ borderRadius:10, border:'1px solid #e2e8f0', fontSize:12, fontFamily:'Inter' }}
+                labelStyle={{ fontWeight:700, marginBottom:4 }} formatter={(v,n) => [`${v} xe`, n==='n'?'Nhập':'Xuất']} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize:12, fontFamily:'Inter' }} formatter={n => n==='n'?'Nhập':'Xuất'} />
+              <Area type="monotone" dataKey="n" name="n" stroke={C.nhap} strokeWidth={2} fill="url(#gNhap)"
+                isAnimationActive animationDuration={1000} animationEasing="ease-out" dot={false} activeDot={{ r:4, fill:C.nhap, strokeWidth:0 }} />
+              <Area type="monotone" dataKey="x" name="x" stroke={C.xuat} strokeWidth={2} fill="url(#gXuat)"
+                isAnimationActive animationDuration={1100} animationEasing="ease-out" dot={false} activeDot={{ r:4, fill:C.xuat, strokeWidth:0 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+          <div style={{ marginTop:10, padding:'7px 12px', background:'#f8fafc', borderRadius:8, display:'flex', alignItems:'center', gap:6, fontSize:12, color:'#64748b' }}>
+            <span>📊</span>
+            <span>Hiển thị <strong>{daily.length}</strong> ngày&nbsp;|&nbsp;Tổng nhập:&nbsp;<strong style={{ color:C.nhap }}>{totalNhap.toLocaleString()}</strong>&nbsp;|&nbsp;Tổng xuất:&nbsp;<strong style={{ color:C.xuat }}>{totalXuat.toLocaleString()}</strong></span>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════ DATA TABLES ════════════════════ */
+    const TH = { padding:'10px 14px', textAlign:'left', fontSize:10.5, fontWeight:700, color:'#64748b', background:'#f4f7fd', borderBottom:'1.5px solid #dde4f0', borderRight:'1px solid #e4e9f5', textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' };
+    const TD = { padding:'9px 14px', fontSize:12.5, color:'#374151', borderBottom:'1px solid #eaeff8', borderRight:'1px solid #eaeff8' };
+
+    const DataSection = ({ owner, owners, longstock, vehicleTypes }) => {
+      const [tab, setTab] = useState(0);
+      const rows = owner==='Tất cả' ? owners : owners.filter(d => d.name===owner);
+
+      return (
+        <div style={{ ...card, padding:'20px 22px', marginTop:14 }}>
+          {/* Tab bar */}
+          <div style={{ display:'flex', borderBottom:'1px solid #f1f5f9', marginBottom:16 }}>
+            {['⚠️ Xe tồn lâu (>5 ngày)','📋 Chi tiết theo Chủ hàng','🚗 Theo loại xe'].map((t,i) => (
+              <button key={i} onClick={() => setTab(i)}
+                style={{ padding:'8px 18px', border:'none', background:'none', cursor:'pointer', fontSize:13,
+                         fontWeight:tab===i?700:400, color:tab===i?'#2563eb':'#64748b',
+                         borderBottom:tab===i?'2px solid #2563eb':'2px solid transparent', marginBottom:-1, transition:'color .15s' }}>{t}</button>
+            ))}
+          </div>
+
+          {/* Tab 0 – Long-stock */}
+          {tab===0 && (
+            <div>
+              {longstock.length>0 && (
+                <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 13px', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:9, marginBottom:14, fontSize:12.5, color:'#92400e' }}>
+                  ⚠️ Có <strong style={{ margin:'0 3px' }}>{longstock.length}</strong> xe tồn bãi quá 5 ngày — cần kiểm tra và xử lý
+                </div>
+              )}
+              {longstock.length===0 && (
+                <div style={{ padding:'18px 0', textAlign:'center', color:'#10b981', fontWeight:600, fontSize:13.5 }}>✅ Không có xe nào tồn quá 5 ngày</div>
+              )}
+              {longstock.length>0 && (
+                <div style={{ border:'1px solid #dde4f0', borderRadius:10, overflow:'hidden' }}>
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                      <thead><tr>{['Số khung (VIN)','Chủ hàng','Loại xe','Ngày nhập','Số ngày','Block','Vị trí'].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {longstock.map((r,i) => (
+                          <tr key={i} className={i%2===1?'hrow trow-even':'hrow'}>
+                            <td style={{ ...TD, fontFamily:'monospace', fontSize:12, color:'#475569', letterSpacing:'0.01em' }}>{r.vin}</td>
+                            <td style={{ ...TD, fontWeight:600 }}>{r.owner}</td>
+                            <td style={TD}>{r.type}</td>
+                            <td style={TD}>{r.date}</td>
+                            <td style={TD}><span style={{ display:'inline-block', padding:'2px 9px', borderRadius:20, fontSize:11.5, fontWeight:700, background:r.days>35?'#fee2e2':'#fff7ed', color:r.days>35?'#b91c1c':'#92400e' }}>{r.days}d</span></td>
+                            <td style={TD}>{r.blk}</td>
+                            <td style={TD}>{r.slot}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 1 – Owner breakdown */}
+          {tab===1 && (
+            <div style={{ border:'1px solid #dde4f0', borderRadius:10, overflow:'hidden' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                <thead><tr>
+                  <th style={TH}>Chủ hàng</th>
+                  <th style={{ ...TH, textAlign:'right', color:C.nhap }}>Nhập trong kỳ</th>
+                  <th style={{ ...TH, textAlign:'right', color:C.xuat }}>Xuất trong kỳ</th>
+                  <th style={{ ...TH, textAlign:'right', color:C.ton, borderRight:'none' }}>Tồn hiện tại</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r,i) => (
+                    <tr key={i} className={i%2===1?'hrow trow-even':'hrow'}>
+                      <td style={{ ...TD, fontWeight:600 }}>{r.name}</td>
+                      <td style={{ ...TD, textAlign:'right' }}><span style={{ color:C.nhap, fontWeight:600 }}>{r.nhap.toLocaleString()}</span></td>
+                      <td style={{ ...TD, textAlign:'right' }}><span style={{ color:C.xuat, fontWeight:600 }}>{r.xuat.toLocaleString()}</span></td>
+                      <td style={{ ...TD, textAlign:'right' }}>{r.ton>0 ? <span style={{ display:'inline-block', padding:'2px 10px', borderRadius:20, background:'#ecfdf5', color:C.ton, fontSize:12, fontWeight:700 }}>{r.ton}</span> : <span style={{ color:'#94a3b8' }}>0</span>}</td>
+                    </tr>
+                  ))}
+                  {owner==='Tất cả' && rows.length>0 && (() => {
+                    const tN=rows.reduce((s,r)=>s+r.nhap,0), tX=rows.reduce((s,r)=>s+r.xuat,0), tT=rows.reduce((s,r)=>s+r.ton,0);
+                    return <tr style={{ background:'#fafafa' }}>
+                      <td style={{ ...TD, fontWeight:800, color:'#0f172a', borderTop:'2px solid #e2e8f0' }}>TỔNG CỘNG</td>
+                      <td style={{ ...TD, textAlign:'right', fontWeight:800, color:C.nhap, borderTop:'2px solid #e2e8f0' }}>{tN.toLocaleString()}</td>
+                      <td style={{ ...TD, textAlign:'right', fontWeight:800, color:C.xuat, borderTop:'2px solid #e2e8f0' }}>{tX.toLocaleString()}</td>
+                      <td style={{ ...TD, textAlign:'right', fontWeight:800, color:C.ton,  borderTop:'2px solid #e2e8f0' }}>{tT}</td>
+                    </tr>;
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Tab 2 – Vehicle types */}
+          {tab===2 && (
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, color:'#0f172a', marginBottom:14 }}>🚗 Thống kê đang tồn theo loại xe</div>
+              <div style={{ display:'flex', gap:20, alignItems:'flex-start' }}>
+                <div style={{ width:230, flexShrink:0 }}>
+                  <div style={{ maxHeight:340, overflowY:'auto', border:'1px solid #dde4f0', borderRadius:10, overflow:'hidden' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                      <thead><tr>
+                        <th style={{ ...TH, borderRadius:'10px 0 0 0' }}>Loại xe</th>
+                        <th style={{ ...TH, textAlign:'right', borderRadius:'0 10px 0 0', color:C.ton, borderRight:'none' }}>Số lượng</th>
+                      </tr></thead>
+                      <tbody>
+                        {vehicleTypes.map((r,i) => (
+                          <tr key={i} className={i%2===1?'hrow trow-even':'hrow'}>
+                            <td style={TD}>{r.type}</td>
+                            <td style={{ ...TD, textAlign:'right' }}><span style={{ fontWeight:700, color:C.ton }}>{r.count}</span></td>
+                          </tr>
+                        ))}
+                        <tr style={{ background:'#fafafa' }}>
+                          <td style={{ ...TD, fontWeight:800, color:'#0f172a', borderTop:'2px solid #e2e8f0' }}>TỔNG</td>
+                          <td style={{ ...TD, textAlign:'right', fontWeight:800, color:C.ton, borderTop:'2px solid #e2e8f0' }}>{vehicleTypes.reduce((s,r)=>s+r.count,0)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <ResponsiveContainer width="100%" height={340}>
+                    <BarChart data={vehicleTypes.slice(0,12)} margin={{ top:6, right:10, left:-8, bottom:64 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="type" tick={{ fontSize:10, fill:'#64748b', fontFamily:'Inter' }} angle={-42} textAnchor="end" interval={0} height={70} axisLine={false} />
+                      <YAxis tick={{ fontSize:10.5, fill:'#94a3b8', fontFamily:'Inter' }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ borderRadius:10, border:'1px solid #e2e8f0', fontSize:12 }} formatter={v => [`${v} xe`,'Đang tồn']} />
+                      <Bar dataKey="count" name="Đang tồn" fill={C.ton} radius={[4,4,0,0]} isAnimationActive animationDuration={700} animationEasing="ease-out" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div style={{ fontSize:11, color:'#94a3b8', textAlign:'center', marginTop:-4 }}>Hiển thị top 12 loại xe · Đơn vị: xe</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    /* ═══════════════════ YARD MAP ═══════════════════════ */
+    const YardMap = ({ yard }) => {
+      const totOcc  = yard.reduce((s,b) => s+b.occ, 0);
+      const totSlot = yard.reduce((s,b) => s+b.tot, 0);
+      const occRate = totSlot>0 ? Math.round(totOcc/totSlot*100) : 0;
+      return (
+        <div>
+          <div style={{ display:'flex', gap:12, marginBottom:14 }}>
+            {[['🚗 Xe trong bãi',totOcc,C.nhap,'#eff6ff'],['📍 Tổng vị trí',totSlot,C.total,'#f5f3ff'],['📊 Lấp đầy',occRate+'%',C.ton,'#ecfdf5']].map(([lbl,val,col,bg],i) => (
+              <div key={i} style={{ ...card, flex:1, borderLeft:`3px solid ${col}`, padding:'14px 16px' }}>
+                <div style={{ fontSize:11.5, color:'#64748b', fontWeight:500, marginBottom:8 }}>{lbl}</div>
+                <div style={{ fontSize:26, fontWeight:800, color:'#0f172a', letterSpacing:'-0.02em' }}>{typeof val==='number'?val.toLocaleString():val}</div>
+              </div>
+            ))}
+          </div>
+          {yard.length===0 && (
+            <div style={{ ...card, padding:'40px', textAlign:'center', color:'#94a3b8', fontSize:13.5 }}>
+              📭 Chưa thiết lập bản đồ bãi. Vui lòng cấu hình trong ứng dụng chính.
+            </div>
+          )}
+          {yard.length>0 && (
+            <>
+              <div style={{ ...card, padding:'20px 22px' }}>
+                <div style={{ fontSize:15, fontWeight:700, color:'#0f172a', marginBottom:14 }}>📊 Tình trạng chiếm dụng theo Block</div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={yard} margin={{ top:8, right:20, left:-8, bottom:0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="block" tick={{ fontSize:12, fill:'#64748b', fontFamily:'Inter' }} axisLine={false} />
+                    <YAxis tick={{ fontSize:11, fill:'#94a3b8', fontFamily:'Inter' }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ borderRadius:10, border:'1px solid #e2e8f0', fontSize:12, fontFamily:'Inter' }} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize:12, fontFamily:'Inter' }} />
+                    <Bar dataKey="occ" name="Đang chiếm dụng" fill={C.nhap} radius={[4,4,0,0]} />
+                    <Bar dataKey="tot" name="Tổng vị trí"      fill="#e8edf5" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ ...card, padding:'20px 22px', marginTop:14 }}>
+                <div style={{ fontSize:15, fontWeight:700, color:'#0f172a', marginBottom:4 }}>🗺️ Bản đồ bãi – Tỷ lệ lấp đầy từng Block</div>
+                <div style={{ fontSize:12, color:'#94a3b8', marginBottom:16 }}>Màu đỏ ≥ 75%, vàng ≥ 55%, xanh &lt; 55%</div>
+                <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+                  {yard.map((b,i) => {
+                    const pct = b.tot>0 ? Math.round(b.occ/b.tot*100) : 0;
+                    const col = pct>=75?C.xuat:pct>=55?C.da:C.ton;
+                    return (
+                      <div key={i} style={{ flex:'1 1 150px', minWidth:140, border:`1.5px solid ${col}30`, borderRadius:11, padding:16, background:`${col}07` }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:'#1e293b', marginBottom:10 }}>{b.block}</div>
+                        <div style={{ height:7, background:'#f1f5f9', borderRadius:4, overflow:'hidden', marginBottom:9 }}>
+                          <div style={{ height:'100%', width:`${pct}%`, background:col, borderRadius:4, transition:'width .4s ease' }} />
+                        </div>
+                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:12 }}>
+                          <span style={{ color:'#64748b' }}>{b.occ} / {b.tot} xe</span>
+                          <span style={{ fontWeight:700, color:col }}>{pct}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+          <div style={{ height:24 }} />
+        </div>
+      );
+    };
+
+    /* ═══════════════════ TWEAKS PANEL ═══════════════════ */
+    const TweaksPanel = ({ tw, set, onClose }) => (
+      <div style={{ position:'fixed', bottom:20, right:20, width:240, background:'white', borderRadius:14, border:'1px solid #e2e8f0', boxShadow:'0 8px 32px rgba(0,0,0,.15)', zIndex:9999 }}>
+        <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <span style={{ fontWeight:700, fontSize:14, color:'#0f172a' }}>🎨 Tweaks</span>
+          <button onClick={onClose} style={{ border:'none', background:'none', fontSize:20, cursor:'pointer', color:'#94a3b8', lineHeight:1, padding:0 }}>×</button>
+        </div>
+        <div style={{ padding:'14px 16px', display:'flex', flexDirection:'column', gap:14 }}>
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:9 }}>Màu sidebar</div>
+            <div style={{ display:'flex', gap:7 }}>
+              {[['navy','#0c1d46','Navy'],['graphite','#111827','Graphite'],['forest','#052e16','Forest']].map(([v,bg,name]) => (
+                <button key={v} onClick={() => set('theme',v)} title={name}
+                  style={{ width:36, height:36, borderRadius:9, background:bg, cursor:'pointer', outline:'none',
+                           border:tw.theme===v?'2.5px solid #3b82f6':'2.5px solid transparent', transition:'border .15s' }} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:9 }}>Biểu đồ cột</div>
+            <div style={{ display:'flex', borderRadius:8, overflow:'hidden', border:'1px solid #e2e8f0' }}>
+              {[['grouped','Nhóm'],['stacked','Chồng']].map(([v,l]) => (
+                <button key={v} onClick={() => set('chartMode',v)}
+                  style={{ flex:1, padding:'7px', border:'none', cursor:'pointer', background:tw.chartMode===v?'#2563eb':'white',
+                           color:tw.chartMode===v?'white':'#64748b', fontSize:12, fontWeight:tw.chartMode===v?700:400, transition:'all .15s' }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:12.5, fontWeight:500, color:'#374151' }}>Biểu đồ ngày</span>
+            <div onClick={() => set('showTrend',!tw.showTrend)}
+              style={{ width:40, height:22, borderRadius:11, background:tw.showTrend?'#2563eb':'#e2e8f0', cursor:'pointer', position:'relative', transition:'background .2s', flexShrink:0 }}>
+              <div style={{ width:16, height:16, borderRadius:'50%', background:'white', position:'absolute', top:3, left:tw.showTrend?21:3, transition:'left .2s', boxShadow:'0 1px 3px rgba(0,0,0,.2)' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+    /* ═══════════════════ ROOT APP ═══════════════════════ */
+    const App = () => {
+      const [filter,     setFilter]    = useState('30d');
+      const [df,         setDf]        = useState('');
+      const [dt,         setDt]        = useState('');
+      const [owner,      setOwner]     = useState('Tất cả');
+      const [tab,        setTab]       = useState('dashboard');
+      const [now,        setNow]       = useState(new Date().toLocaleString('vi-VN'));
+      const [showTw,     setShowTw]    = useState(false);
+      const [tw,         setTwState]   = useState(TWEAK_DEFAULTS);
+      const [meta,       setMeta]      = useState({ dateRange:{ min:'', max:'' }, owners:[], version:'' });
+      const [apiData,    setApiData]   = useState(null);
+      const [loading,    setLoading]   = useState(false);
+      const [refreshKey, setRefreshKey]= useState(0);
+
+      /* ── Fetch meta on mount ── */
+      useEffect(() => {
+        fetch('/api/meta')
+          .then(r => r.json())
+          .then(m => {
+            setMeta(m);
+            const today = new Date();
+            setDt(fmtDate(today));
+            setDf(fmtDate(new Date(today - 30 * 86400000)));
+          })
+          .catch(console.error);
+      }, []);
+
+      /* ── Fetch data when filters change ── */
+      useEffect(() => {
+        if (!df || !dt) return;
+        setLoading(true);
+        const params = new URLSearchParams({ start:parseVi(df), end:parseVi(dt), owner });
+        fetch(`/api/data?${params}`)
+          .then(r => r.json())
+          .then(d => { setApiData(d); setLoading(false); })
+          .catch(e => { console.error(e); setLoading(false); });
+      }, [df, dt, owner, refreshKey]);
+
+      /* ── Quick filter preset ── */
+      const handleFilterPreset = v => {
+        setFilter(v);
+        const today = new Date();
+        setDt(fmtDate(today));
+        if      (v==='7d')  setDf(fmtDate(new Date(today - 7  * 86400000)));
+        else if (v==='30d') setDf(fmtDate(new Date(today - 30 * 86400000)));
+        else if (v==='90d') setDf(fmtDate(new Date(today - 90 * 86400000)));
+        else                setDf(meta.dateRange.min || fmtDate(new Date(today - 365 * 86400000)));
+      };
+
+      /* ── Derived data ── */
+      const kpi          = apiData?.kpi          || EMPTY_KPI;
+      const owners       = apiData?.owners        || [];
+      const daily        = apiData?.daily         || [];
+      const yard         = apiData?.yard          || [];
+      const longstock    = apiData?.longstock     || [];
+      const vehicleTypes = apiData?.vehicleTypes  || [];
+
+      const setTw = useCallback((k, v) => {
+        setTwState(p => ({ ...p, [k]:v }));
+        window.parent.postMessage({ type:'__edit_mode_set_keys', edits:{ [k]:v } }, '*');
+      }, []);
+
+      useEffect(() => {
+        const handler = e => {
+          if (e.data?.type==='__activate_edit_mode')   setShowTw(true);
+          if (e.data?.type==='__deactivate_edit_mode') setShowTw(false);
+        };
+        window.addEventListener('message', handler);
+        window.parent.postMessage({ type:'__edit_mode_available' }, '*');
+        const tick = setInterval(() => setNow(new Date().toLocaleString('vi-VN')), 60000);
+        return () => { window.removeEventListener('message', handler); clearInterval(tick); };
+      }, []);
+
+      return (
+        <div style={{ display:'flex', height:'100vh', overflow:'hidden', background:'#f0f3fb' }}>
+          <Sidebar filter={filter} df={df} setDf={setDf} dt={dt} setDt={setDt}
+                   owner={owner} setOwner={setOwner}
+                   onRefresh={() => { setRefreshKey(k => k+1); setNow(new Date().toLocaleString('vi-VN')); }}
+                   now={now} theme={tw.theme} meta={meta} onFilterPreset={handleFilterPreset} />
+
+          <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minWidth:0, position:'relative' }}>
+            {/* ── Top Header bar ── */}
+            <div style={{ background:'white', borderBottom:'1px solid #e2e8f0', padding:'13px 26px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div>
+                <h1 style={{ fontSize:19, fontWeight:800, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>Vehicle Management Dashboard</h1>
+                <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Ứng dụng quản lý phương tiện · Cảng Tân Thuận </div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6, background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:8, padding:'7px 13px', fontSize:12.5, color:'#0369a1', fontWeight:600 }}>
+                  📅 Từ {df} đến {dt}
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 11px', borderRadius:8, background:'#f1f5f9', border:'1px solid #e2e8f0', fontSize:12, color:'#64748b' }}>
+                  <span style={{ width:7, height:7, borderRadius:'50%', background:'#10b981', display:'inline-block' }} />
+                  Realtime
+                </div>
+                <button className="export-btn"
+                  onClick={() => exportExcel(kpi, owners, daily, vehicleTypes, longstock)}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 15px', borderRadius:8, background:'#16a34a', border:'1px solid #15803d', color:'white', fontSize:12.5, fontWeight:600, cursor:'pointer', boxShadow:'0 1px 4px rgba(22,163,74,.28)', flexShrink:0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Xuất Excel
+                </button>
+              </div>
+            </div>
+
+            {/* ── Loading overlay ── */}
+            {loading && (
+              <div style={{ position:'absolute', inset:0, background:'rgba(240,243,251,0.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, pointerEvents:'none' }}>
+                <div style={{ background:'white', borderRadius:12, padding:'14px 28px', boxShadow:'0 4px 20px rgba(0,0,0,.1)', display:'flex', alignItems:'center', gap:10, fontSize:13.5, color:'#64748b', fontWeight:500 }}>
+                  <span style={{ display:'inline-block', width:16, height:16, border:'2.5px solid #3b82f6', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+                  Đang tải dữ liệu...
+                </div>
+              </div>
+            )}
+
+            {/* ── Scrollable content ── */}
+            <div style={{ flex:1, overflowY:'auto', padding:'20px 26px' }}>
+              <SectionHeader icon="📊" title="Chỉ số" sub="Tổng hợp số liệu" />
+              <div style={{ background:'white', borderRadius:16, border:'1px solid #e4e9f2', boxShadow:'0 2px 10px rgba(15,23,42,.07)', padding:'16px 20px', marginBottom:4 }}>
+                <KPIRow kpi={kpi} />
+              </div>
+
+              {/* Main tabs */}
+              <div style={{ display:'flex', borderBottom:'2px solid #e2e8f0', margin:'20px 0 0' }}>
+                {[['dashboard','📊 Dashboard'],['yardmap','🗺️ Bản đồ bãi xe']].map(([id,label]) => (
+                  <button key={id} onClick={() => setTab(id)}
+                    style={{ padding:'10px 22px', border:'none', background:'none', cursor:'pointer', fontSize:13.5,
+                             fontWeight:tab===id?700:400, color:tab===id?'#2563eb':'#64748b',
+                             borderBottom:tab===id?'2px solid #2563eb':'2px solid transparent', marginBottom:-2, transition:'color .15s' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {tab==='dashboard' && (
+                <div className="chart-enter" style={{ paddingTop:16 }}>
+                  <SectionHeader icon="📈" title="Phân tích theo Chủ hàng" sub="Số lượng nhập / xuất / tồn · Tỷ lệ tồn bãi hiện tại" />
+                  <div style={{ display:'grid', gridTemplateColumns:'65fr 35fr', gap:14, alignItems:'stretch', marginBottom:22 }}>
+                    <OwnerBarChart data={owners} sel={owner} mode={tw.chartMode} />
+                    <DonutChart data={owners} />
+                  </div>
+                  <SectionHeader icon="📋" title="Biến động" sub="Bảng phân tích chi tiết" />
+                  <TrendChart show={tw.showTrend} daily={daily} />
+                  <DataSection owner={owner} owners={owners} longstock={longstock} vehicleTypes={vehicleTypes} />
+                  <div style={{ height:24 }} />
+                </div>
+              )}
+
+              {tab==='yardmap' && (
+                <div className="chart-enter" style={{ paddingTop:16 }}>
+                  <SectionHeader icon="🗺️" title="Bản đồ bãi xe" sub="Tình trạng chiếm dụng và tỷ lệ lấp đầy từng khu vực" />
+                  <YardMap yard={yard} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {showTw && (
+            <TweaksPanel tw={tw} set={setTw} onClose={() => { setShowTw(false); window.parent.postMessage({ type:'__edit_mode_dismissed' }, '*'); }} />
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

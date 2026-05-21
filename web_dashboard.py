@@ -11,6 +11,8 @@ import plotly.graph_objects as go
 import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
+from html import escape
+from io import BytesIO
 import os
 
 # Lấy version từ biến môi trường (được truyền vào bởi WebDashboardManager khi chạy từ exe)
@@ -23,6 +25,17 @@ APP_VERSION_DISPLAY = os.environ.get('VEHICLE_APP_VERSION', 'V1.0 @2026')
 DB_FILE = os.environ.get('VEHICLE_APP_DB_PATH', "vehicle_management_v1.0.db")
 PAGE_TITLE = "🚗 Vehicle Management Dashboard"
 PAGE_ICON = "🚗"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGO_FILE = os.path.join(BASE_DIR, "assets", "Logo.jpg")
+COLORS = {
+    "in": "#3b82f6",
+    "out": "#ef4444",
+    "stock": "#10b981",
+    "total": "#7c3aed",
+    "done": "#f59e0b",
+    "text": "#0f172a",
+    "muted": "#64748b",
+}
 
 # ============================================
 # DATABASE CONNECTION
@@ -287,6 +300,486 @@ def get_yard_detail():
     """
     return run_query(query)
 
+def fmt_number(value):
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return "0"
+
+def safe_int(value):
+    try:
+        if pd.isna(value):
+            return 0
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+def fmt_kpi_value(value):
+    if isinstance(value, str):
+        return escape(value)
+    return fmt_number(value)
+
+def inject_design_css():
+    st.markdown("""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        html, body, [class*="css"], .stApp {
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        .stApp {
+            background: #f0f3fb;
+        }
+        .main .block-container {
+            padding: 1rem 1.7rem 1.4rem;
+            max-width: 100%;
+        }
+        [data-testid="stHeader"] {
+            background: rgba(240, 243, 251, 0.88);
+            backdrop-filter: blur(10px);
+        }
+        [data-testid="stSidebar"] {
+            background: linear-gradient(175deg, #0c1d46 0%, #142d5a 55%, #1a3a6b 100%);
+            border-right: 1px solid rgba(255, 255, 255, 0.09);
+        }
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] div {
+            color: rgba(255, 255, 255, 0.88);
+        }
+        [data-testid="stSidebar"] small,
+        [data-testid="stSidebar"] .stCaptionContainer,
+        [data-testid="stSidebar"] .stMarkdown p {
+            color: rgba(255, 255, 255, 0.62);
+        }
+        [data-testid="stSidebar"] hr {
+            border-color: rgba(255, 255, 255, 0.09);
+            margin: 0.75rem 0;
+        }
+        [data-testid="stSidebar"] .stButton button {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            border-radius: 8px;
+            color: rgba(255, 255, 255, 0.74);
+            transition: all .15s ease;
+        }
+        [data-testid="stSidebar"] .stButton button:hover {
+            background: rgba(59, 130, 246, 0.28);
+            border-color: rgba(96, 165, 250, 0.7);
+            color: #93c5fd;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background: #ffffff;
+            border: 1px solid #e4e9f2;
+            border-radius: 14px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, .07), 0 1px 3px rgba(15, 23, 42, .04);
+        }
+        .vm-sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 4px 0 10px;
+        }
+        .vm-sidebar-logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 9px;
+            background: #fff;
+            padding: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+            font-size: 20px;
+        }
+        .vm-sidebar-title {
+            color: #fff;
+            font-weight: 700;
+            font-size: 13.5px;
+            line-height: 1.2;
+        }
+        .vm-sidebar-subtitle {
+            color: rgba(255, 255, 255, .38);
+            font-size: 10px;
+            letter-spacing: .07em;
+            margin-top: 2px;
+        }
+        .vm-topbar {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            box-shadow: 0 2px 10px rgba(15, 23, 42, .06);
+            margin-bottom: 16px;
+        }
+        .vm-topbar h1 {
+            font-size: 21px;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: -0.01em;
+            margin: 0;
+            padding: 0;
+        }
+        .vm-topbar p {
+            font-size: 12.5px;
+            color: #94a3b8;
+            margin: 3px 0 0;
+        }
+        .vm-topbar-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .vm-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 8px;
+            padding: 7px 13px;
+            font-size: 12.5px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .vm-chip-blue {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            color: #0369a1;
+        }
+        .vm-chip-gray {
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            color: #64748b;
+        }
+        .vm-live-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #10b981;
+            display: inline-block;
+        }
+        .vm-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 4px 0 12px;
+        }
+        .vm-section-bar {
+            width: 3px;
+            height: 24px;
+            border-radius: 2px;
+            background: linear-gradient(180deg, #3b82f6, #7c3aed);
+        }
+        .vm-section-title {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: #0f172a;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .vm-section-sub {
+            font-size: 11.5px;
+            color: #94a3b8;
+            margin-top: 1px;
+        }
+        .vm-kpi {
+            background: #fff;
+            border: 1px solid #e4e9f2;
+            border-left: 3px solid var(--accent);
+            border-radius: 14px;
+            padding: 16px 18px;
+            min-height: 128px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, .07), 0 1px 3px rgba(15, 23, 42, .04);
+            transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), box-shadow .22s ease;
+        }
+        .vm-kpi:hover {
+            transform: translateY(-3px) scale(1.015);
+            box-shadow: 0 14px 32px rgba(15, 23, 42, .12), 0 4px 12px rgba(15, 23, 42, .08);
+        }
+        .vm-kpi-watermark {
+            position: absolute;
+            top: -14px;
+            right: -10px;
+            font-size: 48px;
+            opacity: .04;
+        }
+        .vm-kpi-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 11px;
+        }
+        .vm-kpi-title {
+            font-size: 11.5px;
+            font-weight: 500;
+            color: #64748b;
+            line-height: 1.4;
+            padding-right: 4px;
+        }
+        .vm-kpi-icon {
+            width: 31px;
+            height: 31px;
+            border-radius: 8px;
+            background: var(--icon-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+        .vm-kpi-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: -0.03em;
+            line-height: 1;
+        }
+        .vm-kpi-sub {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 5px;
+        }
+        .vm-card-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 2px;
+        }
+        .vm-card-subtitle {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 12px;
+        }
+        .vm-alert {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 13px;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 9px;
+            margin-bottom: 14px;
+            font-size: 12.5px;
+            color: #92400e;
+        }
+        .vm-yard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .vm-yard-card {
+            border: 1.5px solid var(--yard-border);
+            border-radius: 11px;
+            padding: 16px;
+            background: var(--yard-bg);
+        }
+        .vm-yard-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 10px;
+        }
+        .vm-yard-track {
+            height: 7px;
+            background: #f1f5f9;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 9px;
+        }
+        .vm-yard-fill {
+            height: 100%;
+            width: var(--pct);
+            background: var(--yard-color);
+            border-radius: 4px;
+        }
+        .vm-yard-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+        }
+        .vm-yard-count {
+            color: #64748b;
+        }
+        .vm-yard-pct {
+            font-weight: 700;
+            color: var(--yard-color);
+        }
+        .stDownloadButton button {
+            background: #16a34a;
+            border: 1px solid #15803d;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            box-shadow: 0 1px 4px rgba(22, 163, 74, .28);
+            transition: all .15s ease;
+        }
+        .stDownloadButton button:hover {
+            background: #15803d;
+            border-color: #15803d;
+            color: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(22, 163, 74, .45);
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 0;
+            padding: 10px 22px;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .stTabs [aria-selected="true"] {
+            color: #2563eb;
+            font-weight: 700;
+            border-bottom: 2px solid #2563eb;
+        }
+        h1, h2, h3 {
+            color: #0f172a;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+def render_section_header(icon, title, subtitle):
+    st.markdown(
+        f"""
+        <div class="vm-section">
+            <div class="vm-section-bar"></div>
+            <div>
+                <div class="vm-section-title"><span>{icon}</span><span>{escape(title)}</span></div>
+                <div class="vm-section-sub">{escape(subtitle)}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def render_kpi_card(title, value, icon, color, icon_bg, subtitle):
+    st.markdown(
+        f"""
+        <div class="vm-kpi" style="--accent:{color};--icon-bg:{icon_bg};">
+            <div class="vm-kpi-watermark">{icon}</div>
+            <div class="vm-kpi-head">
+                <div class="vm-kpi-title">{escape(title)}</div>
+                <div class="vm-kpi-icon">{icon}</div>
+            </div>
+            <div class="vm-kpi-value">{fmt_kpi_value(value)}</div>
+            <div class="vm-kpi-sub">{escape(subtitle)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def apply_plotly_style(fig, height=320, legend_top=True):
+    legend = dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02 if legend_top else -0.22,
+        xanchor="center",
+        x=0.5,
+        font=dict(size=12, color=COLORS["muted"])
+    )
+    fig.update_layout(
+        font=dict(family="Inter, Arial, sans-serif", color=COLORS["text"]),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        height=height,
+        margin=dict(l=36, r=28, t=42, b=54),
+        legend=legend,
+        hoverlabel=dict(bgcolor="white", font_size=12, font_family="Inter")
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, linecolor="#e2e8f0", tickfont=dict(color=COLORS["muted"], size=11))
+    fig.update_yaxes(showgrid=True, gridcolor="#f1f5f9", zeroline=False, tickfont=dict(color="#94a3b8", size=11))
+    return fig
+
+def build_excel_report(stats, df_summary, df_daily, df_types, df_long_stock, df_yard, start_display, end_display):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        if stats is not None:
+            pd.DataFrame([{
+                "Từ ngày": start_display,
+                "Đến ngày": end_display,
+                "Tổng xe (toàn bộ)": safe_int(stats["total_vehicles"]),
+                "Nhập trong kỳ": safe_int(stats["total_in_period"]),
+                "Xuất trong kỳ": safe_int(stats["total_out_period"]),
+                "Đang tồn kho": safe_int(stats["in_stock"]),
+                "Đã xuất (tổng)": safe_int(stats["shipped"]),
+            }]).to_excel(writer, sheet_name="KPI Tổng quan", index=False)
+        if not df_summary.empty:
+            df_summary.rename(columns={
+                "owner": "Chủ hàng",
+                "total_in": "Nhập trong kỳ",
+                "total_out": "Xuất trong kỳ",
+                "stock": "Tồn hiện tại",
+            }).to_excel(writer, sheet_name="Theo Chủ hàng", index=False)
+        if not df_daily.empty:
+            df_export_daily = df_daily.copy()
+            df_export_daily["date"] = pd.to_datetime(df_export_daily["date"], errors="coerce").dt.strftime("%d/%m/%Y")
+            df_export_daily.rename(columns={
+                "date": "Ngày",
+                "type": "Loại",
+                "count": "Số lượng",
+            }).to_excel(writer, sheet_name="Biến động", index=False)
+        if not df_types.empty:
+            df_types.rename(columns={
+                "vehicle_type": "Loại xe",
+                "count": "Số lượng đang tồn",
+            }).to_excel(writer, sheet_name="Theo loại xe", index=False)
+        if not df_long_stock.empty:
+            df_export_long = df_long_stock.copy()
+            df_export_long["date_in"] = pd.to_datetime(df_export_long["date_in"], errors="coerce").dt.strftime("%d/%m/%Y")
+            df_export_long.rename(columns={
+                "vin": "Số khung (VIN)",
+                "owner": "Chủ hàng",
+                "vehicle_type": "Loại xe",
+                "date_in": "Ngày nhập",
+                "days_in_stock": "Số ngày tồn",
+                "block": "Block",
+                "slot": "Vị trí",
+            }).to_excel(writer, sheet_name="Xe tồn lâu", index=False)
+        if not df_yard.empty:
+            df_yard.rename(columns={
+                "block": "Block",
+                "occupied": "Đang chiếm dụng",
+                "total_slots": "Tổng vị trí",
+            }).to_excel(writer, sheet_name="Bản đồ bãi", index=False)
+    output.seek(0)
+    return output.getvalue()
+
+def render_yard_fill_cards(df_yard):
+    cards = []
+    for _, row in df_yard.iterrows():
+        occupied = int(row["occupied"] or 0)
+        total = int(row["total_slots"] or 0)
+        pct = round((occupied / total * 100) if total > 0 else 0)
+        color = COLORS["out"] if pct >= 75 else (COLORS["done"] if pct >= 55 else COLORS["stock"])
+        cards.append(
+            f"""
+            <div class="vm-yard-card" style="--yard-color:{color};--yard-border:{color}30;--yard-bg:{color}07;--pct:{pct}%;">
+                <div class="vm-yard-name">{escape(str(row["block"]))}</div>
+                <div class="vm-yard-track"><div class="vm-yard-fill"></div></div>
+                <div class="vm-yard-meta">
+                    <span class="vm-yard-count">{fmt_number(occupied)} / {fmt_number(total)} xe</span>
+                    <span class="vm-yard-pct">{pct}%</span>
+                </div>
+            </div>
+            """
+        )
+    st.markdown(f"<div class='vm-yard-grid'>{''.join(cards)}</div>", unsafe_allow_html=True)
+
 # ============================================
 # STREAMLIT APP
 # ============================================
@@ -358,19 +851,38 @@ def main():
         }
         </style>
     """, unsafe_allow_html=True)
+    inject_design_css()
     
     # Header
-    col_title, col_version = st.columns([4, 1])
-    with col_title:
-        st.title("🚗 Vehicle Management Dashboard")
-    with col_version:
-        st.markdown(f"<div style='text-align:right; padding-top:20px; color:#666;'></div>", unsafe_allow_html=True)
-    
-    st.divider()
+    header_placeholder = st.empty()
     
     # Sidebar filters
     with st.sidebar:
-        st.markdown("### 🔧 Bộ lọc dữ liệu")
+        if os.path.exists(LOGO_FILE):
+            brand_logo, brand_text = st.columns([1, 3])
+            with brand_logo:
+                st.image(LOGO_FILE, width=46)
+            with brand_text:
+                st.markdown(
+                    """
+                    <div class="vm-sidebar-title">Vehicle Management</div>
+                    <div class="vm-sidebar-subtitle">CSG SAIGON PORT · SINCE 1863</div>
+                    """,
+                    unsafe_allow_html=True
+                )
+        else:
+            st.markdown(
+                """
+                <div class="vm-sidebar-brand">
+                    <div class="vm-sidebar-logo">🚗</div>
+                    <div>
+                        <div class="vm-sidebar-title">Vehicle Management</div>
+                        <div class="vm-sidebar-subtitle">CSG SAIGON PORT · SINCE 1863</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         st.divider()
         
         # Get date range from database
@@ -461,63 +973,87 @@ def main():
     # Format dates for display (Vietnamese format)
     start_display = start_date.strftime("%d/%m/%Y")
     end_display = end_date.strftime("%d/%m/%Y")
+
+    stats = get_summary_stats(start_str, end_str)
+    df_summary_base = get_summary_by_owner_period(start_str, end_str)
+    df_summary = df_summary_base.copy()
+    if selected_owner != "Tất cả" and not df_summary.empty:
+        df_summary = df_summary[df_summary['owner'] == selected_owner]
+    df_owners = get_vehicles_by_owner(start_str, end_str)
+    df_daily = get_daily_inbound_outbound(start_str, end_str)
+    df_long_stock = get_long_stock_vehicles(5)
+    df_types = get_vehicle_types()
+    df_yard = get_yard_occupancy()
+    excel_data = build_excel_report(
+        stats,
+        df_summary,
+        df_daily,
+        df_types,
+        df_long_stock,
+        df_yard,
+        start_display,
+        end_display
+    )
+
+    with header_placeholder.container():
+        head_left, head_right = st.columns([5, 1])
+        with head_left:
+            st.markdown(
+                f"""
+                <div class="vm-topbar">
+                    <div>
+                        <h1>Vehicle Management Dashboard</h1>
+                        <p>Hệ thống quản lý phương tiện · Cảng Tân Thuận – CSG Saigon Port</p>
+                    </div>
+                    <div class="vm-topbar-actions">
+                        <div class="vm-chip vm-chip-blue">📅 Từ {start_display} đến {end_display}</div>
+                        <div class="vm-chip vm-chip-gray"><span class="vm-live-dot"></span>Realtime</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        with head_right:
+            st.download_button(
+                "⬇️ Xuất Excel",
+                data=excel_data,
+                file_name=f"BaoCao_VehicleManagement_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
     
     # Show current filter period
-    st.markdown(f"<div style='text-align:center; padding:5px; background:#f0f2f6; border-radius:5px; margin-bottom:10px;'>"
-                f"📅 <b>Từ {start_display} đến {end_display}</b></div>", unsafe_allow_html=True)
+    render_section_header("📊", "Chỉ số tổng quan", "Tổng hợp số liệu trong kỳ báo cáo đã chọn")
     
     # ==========================================
     # KEY METRICS ROW
     # ==========================================
-    stats = get_summary_stats(start_str, end_str)
-    
     if stats is not None:
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            st.metric(
-                label="📦 Tổng xe (toàn bộ)",
-                value=f"{int(stats['total_vehicles']):,}"
-            )
+            render_kpi_card("Tổng xe (toàn bộ)", stats['total_vehicles'], "🚗", COLORS["total"], "#f5f3ff", "Tất cả thời gian")
         
         with col2:
-            st.metric(
-                label="📥 Nhập trong kỳ",
-                value=f"{int(stats['total_in_period']):,}"
-            )
+            render_kpi_card("Nhập trong kỳ", stats['total_in_period'], "📥", COLORS["in"], "#eff6ff", "Xe nhập trong kỳ")
         
         with col3:
-            st.metric(
-                label="📤 Xuất trong kỳ",
-                value=f"{int(stats['total_out_period']):,}"
-            )
+            render_kpi_card("Xuất trong kỳ", stats['total_out_period'], "📤", COLORS["out"], "#fff1f2", "Xe xuất trong kỳ")
         
         with col4:
-            st.metric(
-                label="🏢 Đang tồn kho",
-                value=f"{int(stats['in_stock']):,}"
-            )
+            render_kpi_card("Đang tồn kho", stats['in_stock'], "🏭", COLORS["stock"], "#ecfdf5", "Xe hiện trong bãi")
         
         with col5:
-            st.metric(
-                label="🚛 Đã xuất (tổng)",
-                value=f"{int(stats['shipped']):,}"
-            )
-    
-    st.divider()
+            render_kpi_card("Đã xuất (tổng)", stats['shipped'], "🚛", COLORS["done"], "#fffbeb", "Tổng xe đã giao")
     
     # ==========================================
     # MAIN TABS
     # ==========================================
-    main_tab1, main_tab2 = st.tabs(["📊 Dashboard", "🗺️ Bản đồ bãi xe"])
+    main_tab1, main_tab2 = st.tabs(["📊 Dashboard Tổng Quan", "🗺️ Bản đồ bãi xe"])
     
     with main_tab1:
         # Get data
-        df_summary = get_summary_by_owner_period(start_str, end_str)
-        
-        # Apply owner filter
-        if selected_owner != "Tất cả" and not df_summary.empty:
-            df_summary = df_summary[df_summary['owner'] == selected_owner]
+        render_section_header("📈", "Phân tích theo Chủ hàng", "Số lượng nhập / xuất / tồn · Tỷ lệ tồn kho hiện tại")
         
         # ==========================================
         # CHARTS ROW
@@ -525,7 +1061,13 @@ def main():
         col_left, col_right = st.columns([3, 2])
         
         with col_left:
-            st.markdown("#### 📊 Chủ hàng")
+            st.markdown(
+                """
+                <div class="vm-card-title">📊 Số lượng xe theo Chủ hàng</div>
+                <div class="vm-card-subtitle">Phân tích nhập / xuất / tồn trong kỳ theo từng chủ hàng</div>
+                """,
+                unsafe_allow_html=True
+            )
             
             if not df_summary.empty:
                 # Create grouped bar chart
@@ -535,7 +1077,7 @@ def main():
                     name='Nhập',
                     x=df_summary['owner'],
                     y=df_summary['total_in'],
-                    marker_color='#3498db',
+                    marker_color=COLORS["in"],
                     text=df_summary['total_in'],
                     textposition='outside'
                 ))
@@ -544,7 +1086,7 @@ def main():
                     name='Xuất',
                     x=df_summary['owner'],
                     y=df_summary['total_out'],
-                    marker_color='#e74c3c',
+                    marker_color=COLORS["out"],
                     text=df_summary['total_out'],
                     textposition='outside'
                 ))
@@ -553,7 +1095,7 @@ def main():
                     name='Tồn',
                     x=df_summary['owner'],
                     y=df_summary['stock'],
-                    marker_color='#2ecc71',
+                    marker_color=COLORS["stock"],
                     text=df_summary['stock'],
                     textposition='outside'
                 ))
@@ -571,18 +1113,15 @@ def main():
                         xanchor="center",
                         x=0.5
                     ),
-                    height=400,
-                    margin=dict(l=40, r=40, t=60, b=40),
                     yaxis=dict(
                         tickmode='linear',
                         tick0=0,
                         dtick=max(1, int(max_val / 5)) if max_val > 5 else 1,
                         rangemode='tozero',
                         range=[0, max_val * 1.2] if max_val > 0 else [0, 10]
-                    ),
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)'
+                    )
                 )
+                apply_plotly_style(fig, height=360)
                 
                 fig.update_xaxes(tickangle=0 if len(df_summary) <= 5 else 45)
                 
@@ -591,9 +1130,13 @@ def main():
                 st.info("📭 Không có dữ liệu trong khoảng thời gian này")
         
         with col_right:
-            st.markdown("#### 🥧 Tỷ lệ tồn kho theo Chủ hàng")
-            
-            df_owners = get_vehicles_by_owner(start_str, end_str)
+            st.markdown(
+                """
+                <div class="vm-card-title">🥧 Tỷ lệ tồn kho theo Chủ hàng</div>
+                <div class="vm-card-subtitle">Phân bố xe đang trong bãi</div>
+                """,
+                unsafe_allow_html=True
+            )
             
             if not df_owners.empty and df_owners['in_stock'].sum() > 0:
                 df_pie = df_owners[df_owners['in_stock'] > 0].copy()
@@ -609,7 +1152,7 @@ def main():
                     values='in_stock',
                     names='owner',
                     hole=0.4,
-                    color_discrete_sequence=px.colors.qualitative.Set3
+                    color_discrete_sequence=[COLORS["stock"], COLORS["in"], COLORS["done"], COLORS["total"], COLORS["out"], "#06b6d4", "#ec4899"]
                 )
                 
                 fig_pie.update_traces(
@@ -627,15 +1170,16 @@ def main():
                         x=0.5,
                         font=dict(size=10)
                     ),
-                    height=400,
                     margin=dict(l=20, r=20, t=40, b=80)
                 )
+                apply_plotly_style(fig_pie, height=360, legend_top=False)
                 
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
                 st.info("📭 Không có xe tồn kho")
         
         st.divider()
+        render_section_header("📋", "Biến động & Chi tiết dữ liệu", "Biến động nhập xuất theo ngày · Bảng phân tích chi tiết")
         
         # ==========================================
         # TIME SERIES CHART - Auto aggregate based on date range
@@ -655,9 +1199,7 @@ def main():
             agg_level = "month"
             chart_title = "📈 Biến động theo tháng"
         
-        st.markdown(f"#### {chart_title}")
-        
-        df_daily = get_daily_inbound_outbound(start_str, end_str)
+        st.markdown(f"<div class='vm-card-title'>{chart_title}</div>", unsafe_allow_html=True)
         
         if not df_daily.empty and len(df_daily) > 0:
             # Convert date column
@@ -702,7 +1244,7 @@ def main():
                     name='Nhập',
                     x=df_pivot['period_label'],
                     y=df_pivot['Nhập'],
-                    marker_color='#3498db',
+                    marker_color=COLORS["in"],
                     text=df_pivot['Nhập'].apply(lambda x: str(int(x)) if x > 0 else ''),
                     textposition='outside'
                 ))
@@ -711,7 +1253,7 @@ def main():
                     name='Xuất',
                     x=df_pivot['period_label'],
                     y=df_pivot['Xuất'],
-                    marker_color='#e74c3c',
+                    marker_color=COLORS["out"],
                     text=df_pivot['Xuất'].apply(lambda x: str(int(x)) if x > 0 else ''),
                     textposition='outside'
                 ))
@@ -724,8 +1266,8 @@ def main():
                     y=df_pivot['Nhập'],
                     mode='lines+markers',
                     fill='tozeroy',
-                    fillcolor='rgba(52, 152, 219, 0.3)',
-                    line=dict(color='#3498db', width=2),
+                    fillcolor='rgba(59, 130, 246, 0.18)',
+                    line=dict(color=COLORS["in"], width=2),
                     marker=dict(size=6)
                 ))
                 
@@ -735,8 +1277,8 @@ def main():
                     y=df_pivot['Xuất'],
                     mode='lines+markers',
                     fill='tozeroy',
-                    fillcolor='rgba(231, 76, 60, 0.3)',
-                    line=dict(color='#e74c3c', width=2),
+                    fillcolor='rgba(239, 68, 68, 0.18)',
+                    line=dict(color=COLORS["out"], width=2),
                     marker=dict(size=6)
                 ))
                 barmode = None
@@ -753,8 +1295,6 @@ def main():
                     xanchor="center",
                     x=0.5
                 ),
-                'height': 400,
-                'margin': dict(l=40, r=40, t=60, b=60),
                 'xaxis': dict(
                     type='category',
                     tickangle=45 if len(df_pivot) > 10 else 0
@@ -763,8 +1303,6 @@ def main():
                     rangemode='tozero',
                     range=[0, max_val * 1.2] if max_val > 0 else [0, 10]
                 ),
-                'plot_bgcolor': 'rgba(0,0,0,0)',
-                'paper_bgcolor': 'rgba(0,0,0,0)',
                 'hovermode': 'x unified'
             }
             
@@ -772,6 +1310,7 @@ def main():
                 layout_opts['barmode'] = barmode
             
             fig_ts.update_layout(**layout_opts)
+            apply_plotly_style(fig_ts, height=320)
             
             st.plotly_chart(fig_ts, use_container_width=True)
             
@@ -788,15 +1327,18 @@ def main():
         tab1, tab2, tab3 = st.tabs(["⚠️ Xe tồn lâu (>5 ngày)", "📋 Chi tiết theo Chủ hàng", "🚗 Theo loại xe"])
         
         with tab1:
-            st.markdown("##### ⚠️ Danh sách xe tồn bãi quá 5 ngày")
-            
-            df_long_stock = get_long_stock_vehicles(5)
+            st.markdown("<div class='vm-card-title'>⚠️ Danh sách xe tồn bãi quá 5 ngày</div>", unsafe_allow_html=True)
             
             if not df_long_stock.empty:
-                df_long_stock['date_in'] = pd.to_datetime(df_long_stock['date_in']).dt.strftime('%d/%m/%Y')
+                st.markdown(
+                    f"<div class='vm-alert'>⚠️ Có <b>{len(df_long_stock)}</b> xe tồn bãi quá 5 ngày — cần kiểm tra và xử lý</div>",
+                    unsafe_allow_html=True
+                )
+                df_long_stock_display = df_long_stock.copy()
+                df_long_stock_display['date_in'] = pd.to_datetime(df_long_stock_display['date_in']).dt.strftime('%d/%m/%Y')
                 
                 st.dataframe(
-                    df_long_stock,
+                    df_long_stock_display,
                     column_config={
                         "vin": st.column_config.TextColumn("Số khung (VIN)", width="large"),
                         "owner": "Chủ hàng",
@@ -814,13 +1356,11 @@ def main():
                     use_container_width=True,
                     height=400
                 )
-                
-                st.warning(f"⚠️ Có **{len(df_long_stock)}** xe tồn quá 5 ngày cần kiểm tra")
             else:
                 st.success("✅ Không có xe nào tồn quá 5 ngày")
         
         with tab2:
-            st.markdown("##### 📋 Bảng tổng hợp theo Chủ hàng")
+            st.markdown("<div class='vm-card-title'>📋 Bảng tổng hợp theo Chủ hàng</div>", unsafe_allow_html=True)
             
             if not df_summary.empty:
                 df_display = df_summary.copy()
@@ -849,9 +1389,7 @@ def main():
                 st.info("📭 Không có dữ liệu")
         
         with tab3:
-            st.markdown("##### 🚗 Thống kê đang tồn")
-            
-            df_types = get_vehicle_types()
+            st.markdown("<div class='vm-card-title'>🚗 Thống kê đang tồn theo loại xe</div>", unsafe_allow_html=True)
             
             if not df_types.empty:
                 col_t1, col_t2 = st.columns([1, 2])
@@ -865,7 +1403,7 @@ def main():
                         },
                         hide_index=True,
                         use_container_width=True,
-                        height=300
+                        height=len(df_types) * 35 + 38
                     )
                 
                 with col_t2:
@@ -875,8 +1413,7 @@ def main():
                         df_types,
                         x='vehicle_type',
                         y='count',
-                        color='count',
-                        color_continuous_scale='Blues',
+                        color_discrete_sequence=[COLORS["stock"]],
                         text='count'
                     )
                     fig_types.update_layout(
@@ -893,6 +1430,7 @@ def main():
                             rangemode='tozero'
                         )
                     )
+                    apply_plotly_style(fig_types, height=340)
                     fig_types.update_traces(textposition='outside')
                     st.plotly_chart(fig_types, use_container_width=True)
             else:
@@ -902,64 +1440,80 @@ def main():
     # YARD MAP TAB
     # ==========================================
     with main_tab2:
-        st.markdown("#### 🗺️ Bản đồ bãi xe")
-        st.caption("Tổng quan vị trí xe trong bãi theo từng Block")
-        
-        df_yard = get_yard_occupancy()
+        render_section_header("🗺️", "Bản đồ bãi xe", "Tình trạng chiếm dụng và tỷ lệ lấp đầy từng khu vực")
         
         if not df_yard.empty:
             # Summary metrics
             col_y1, col_y2, col_y3 = st.columns(3)
             total_occupied = int(df_yard['occupied'].sum())
             total_slots = int(df_yard['total_slots'].sum())
-            total_blocks = len(df_yard)
+            occupancy_rate = (total_occupied / total_slots * 100) if total_slots > 0 else 0
             
             with col_y1:
-                st.metric("🚗 Xe trong bãi", f"{total_occupied:,}")
+                render_kpi_card("Xe trong bãi", total_occupied, "🚗", COLORS["in"], "#eff6ff", "Tổng xe có vị trí")
             with col_y2:
-                st.metric("📍 Tổng vị trí", f"{total_slots:,}")
+                render_kpi_card("Tổng vị trí", total_slots, "📍", COLORS["total"], "#f5f3ff", "Tổng slot trong bãi")
             with col_y3:
-                occupancy_rate = (total_occupied / total_slots * 100) if total_slots > 0 else 0
-                st.metric("📊 Tỷ lệ lấp đầy", f"{occupancy_rate:.1f}%")
+                render_kpi_card("Tỷ lệ lấp đầy", f"{occupancy_rate:.1f}%", "📊", COLORS["stock"], "#ecfdf5", "Phần trăm chiếm dụng")
             
             st.divider()
             
-            # Bar chart - full width
-            max_occupied = int(df_yard['occupied'].max())
+            st.markdown(
+                """
+                <div class="vm-card-title">📊 Tình trạng chiếm dụng theo Block</div>
+                <div class="vm-card-subtitle">So sánh số xe đang chiếm dụng và tổng vị trí theo từng Block</div>
+                """,
+                unsafe_allow_html=True
+            )
+            max_slots = int(df_yard[['occupied', 'total_slots']].max().max())
             
             fig_yard = go.Figure()
             
             fig_yard.add_trace(go.Bar(
                 x=df_yard['block'],
                 y=df_yard['occupied'],
-                marker_color='#3498db',
+                marker_color=COLORS["in"],
                 text=df_yard['occupied'].astype(int),
                 textposition='outside',
-                name='Số xe'
+                name='Đang chiếm dụng'
+            ))
+            fig_yard.add_trace(go.Bar(
+                x=df_yard['block'],
+                y=df_yard['total_slots'],
+                marker_color='#e8edf5',
+                text=df_yard['total_slots'].astype(int),
+                textposition='outside',
+                name='Tổng vị trí'
             ))
             
             fig_yard.update_layout(
                 xaxis_title="Block",
                 yaxis_title="Số xe",
-                showlegend=False,
-                height=450,
-                margin=dict(l=40, r=40, t=40, b=40),
+                barmode='group',
                 yaxis=dict(
                     tickmode='linear',
                     tick0=0,
-                    dtick=max(1, int(max_occupied / 5)) if max_occupied > 5 else 1,
+                    dtick=max(1, int(max_slots / 5)) if max_slots > 5 else 1,
                     rangemode='tozero',
-                    range=[0, max_occupied * 1.2] if max_occupied > 0 else [0, 10]
-                ),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)'
+                    range=[0, max_slots * 1.2] if max_slots > 0 else [0, 10]
+                )
             )
+            apply_plotly_style(fig_yard, height=360)
             
             st.plotly_chart(fig_yard, use_container_width=True)
+
+            st.markdown(
+                """
+                <div class="vm-card-title">🗺️ Bản đồ bãi – Tỷ lệ lấp đầy từng Block</div>
+                <div class="vm-card-subtitle">Màu đỏ ≥ 75%, vàng ≥ 55%, xanh &lt; 55%</div>
+                """,
+                unsafe_allow_html=True
+            )
+            render_yard_fill_cards(df_yard)
             
             # Detail table
             st.divider()
-            st.markdown("##### 📋 Chi tiết xe trong bãi")
+            st.markdown("<div class='vm-card-title'>📋 Chi tiết xe trong bãi</div>", unsafe_allow_html=True)
             
             df_detail = get_yard_detail()
             if not df_detail.empty:
