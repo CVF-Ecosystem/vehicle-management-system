@@ -552,12 +552,38 @@ class DataNormalizer:
         logging.info(f"DataNormalizer: nạp {len(self._known_drivers)} tài xế để phonetic matching.")
 
     def _sanitize_driver_text(self, text: str) -> str:
-        """Làm sạch chuỗi tên tài xế: trim, collapse space, UPPERCASE."""
+        """Làm sạch chuỗi tên tài xế: trim, collapse space, UPPERCASE, sửa viết tắt/chữ gõ sai."""
         if not text:
             return ""
-        # Thu gọn nhiều space liên tiếp thành 1
-        cleaned = ' '.join(text.strip().split())
-        return cleaned.upper()
+        
+        # Từ điển sửa các lỗi chính tả và chữ viết tắt thường gặp của tài xế
+        typo_map = {
+            "NG": "NGUYEN",
+            "NG.": "NGUYEN",
+            "ALM": "LAM",
+            "NLONG": "LONG",
+            "LONH": "LONG",
+            "TRRUNG": "TRUNG",
+            "THICH": "THINH",
+            "NGHYEM": "NGHIEM",
+            "DUOGN": "DUONG",
+            "XUNA": "XUAN",
+            "DINE": "DINH"
+        }
+        
+        words = text.strip().upper().split()
+        corrected_words = []
+        for w in words:
+            # Sửa các từ viết tắt / gõ sai
+            clean_w = w.rstrip('.')
+            if clean_w in typo_map:
+                corrected_words.append(typo_map[clean_w])
+            elif w in typo_map:
+                corrected_words.append(typo_map[w])
+            else:
+                corrected_words.append(w)
+                
+        return ' '.join(corrected_words)
 
     def _find_canonical_driver_by_phonetic(self, input_name: str) -> str | None:
         """

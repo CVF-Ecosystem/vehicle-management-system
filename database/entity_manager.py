@@ -44,6 +44,8 @@ class EntityManager(BaseManager):
             from collections import defaultdict
             from data_normalizer import normalize_driver_name as _norm_name
 
+            from data_normalizer import normalizer as _normalizer
+
             cur = self.conn.cursor()
             cur.execute("SELECT id, name, phone, cccd, notes, is_active FROM drivers")
             rows = cur.fetchall()
@@ -60,8 +62,8 @@ class EntityManager(BaseManager):
             groups = defaultdict(list)
             for r in rows:
                 d = dict(r)
-                # Trim & sanitize sơ bộ trước khi nhóm
-                d['clean_name'] = ' '.join(d['name'].strip().split()).upper()
+                # Trim & sanitize thông minh bằng normalizer (áp dụng từ điển lỗi chính tả)
+                d['clean_name'] = _normalizer._sanitize_driver_text(d['name'])
                 key = _phonetic_key(d['clean_name'])
                 d['diacritics'] = _count_diacritics(d['clean_name'])
                 groups[key].append(d)
@@ -94,7 +96,13 @@ class EntityManager(BaseManager):
                     
                     # Cập nhật tên chuẩn thành viết hoa sạch sẽ
                     if canonical['name'] != canonical['clean_name']:
-                        cur.execute("SELECT id FROM drivers WHERE name = ? AND id != ?", (canonical['clean_name'], canonical['id']))
+                        # Bỏ qua các ID nằm trong danh sách gộp vì chúng sẽ bị xóa
+                        member_ids = [m['id'] for m in members]
+                        placeholders = ','.join(['?'] * len(member_ids))
+                        cur.execute(
+                            f"SELECT id FROM drivers WHERE name = ? AND id NOT IN ({placeholders})", 
+                            (canonical['clean_name'], *member_ids)
+                        )
                         if not cur.fetchone():
                             cur.execute("UPDATE drivers SET name = ? WHERE id = ?", (canonical['clean_name'], canonical['id']))
                             canonical['name'] = canonical['clean_name']
