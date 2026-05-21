@@ -85,7 +85,7 @@ class StockTab:
         list_frame.grid_columnconfigure(0, weight=1)
 
         # === PHASE 2.3: Added 'select' column for checkboxes ===
-        cols = ("select", "stt", "vin", "vehicle_type", "owner", "location", "date_in")
+        cols = ("select", "stt", "vin", "vehicle_type", "owner", "location", "date_in", "so_cont", "tau", "chuyen")
         self.tree = ttk.Treeview(list_frame, columns=cols, show="headings")
         self.tree.grid(row=0, column=0, sticky="nsew")
         
@@ -98,6 +98,9 @@ class StockTab:
         self.tree.column("owner", width=150)
         self.tree.column("location", width=120, anchor="center")
         self.tree.column("date_in", width=150, anchor="center")
+        self.tree.column("so_cont", width=120, anchor="center")
+        self.tree.column("tau", width=120, anchor="center")
+        self.tree.column("chuyen", width=100, anchor="center")
         
         # Bind click on select column to toggle checkbox
         self.tree.bind("<Button-1>", self._on_tree_click)
@@ -168,6 +171,9 @@ class StockTab:
         self.tree.heading("owner", text=self.app.get_translation("tree_owner"))
         self.tree.heading("location", text=self.app.get_translation("tree_location"))
         self.tree.heading("date_in", text=self.app.get_translation("tree_date_in"))
+        self.tree.heading("so_cont", text="Số Cont")
+        self.tree.heading("tau", text="Tàu")
+        self.tree.heading("chuyen", text="Chuyến")
 
         self.context_menu.delete(0, "end")
         self.context_menu.add_command(label=self.app.get_translation("ctx_menu_edit"), command=self.edit_selected_vehicle)
@@ -244,7 +250,7 @@ class StockTab:
             location_name = row.get("full_location_name", "N/A")
             # === PHASE 2.3: Add checkbox column ===
             checkbox = "☑" if row["vin"] in self.selected_vins else "☐"
-            self.tree.insert("", "end", values=(checkbox, stt, row["vin"], row["vehicle_type"], row["owner"], location_name, date_in_str))
+            self.tree.insert("", "end", values=(checkbox, stt, row["vin"], row["vehicle_type"], row["owner"], location_name, date_in_str, row.get("so_cont", ""), row.get("tau", ""), row.get("chuyen", "")))
 
         status_text = self.app.get_translation("status_stock_count").format(count=total_items)
         self.app.status_var.set(status_text)
@@ -337,9 +343,15 @@ class StockTab:
                 return
 
             if res["original_vin"] != res["new_vin"]:
-                result = self.vehicle_manager.update_vin(res["original_vin"], res["new_vin"], new_owner, new_type)
+                result = self.vehicle_manager.update_vin(
+                    res["original_vin"], res["new_vin"], new_owner, new_type,
+                    so_cont=res["so_cont"], tau=res["tau"], chuyen=res["chuyen"]
+                )
             else:
-                result = self.vehicle_manager.update_vehicle_details(vin, new_owner, new_type)
+                result = self.vehicle_manager.update_vehicle_details(
+                    vin, new_owner, new_type,
+                    so_cont=res["so_cont"], tau=res["tau"], chuyen=res["chuyen"]
+                )
 
             if result["success"]:
                 self.app.show_toast("Cập nhật thông tin xe thành công!")

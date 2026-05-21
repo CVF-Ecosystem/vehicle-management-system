@@ -591,7 +591,7 @@ class EditVehicleDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.app = parent
         self.title(f"{self.app.get_translation('ctx_menu_edit')}: {vehicle_info['vin']}")
-        self.geometry("400x280")
+        self.geometry("400x480")
         self.result = None
         self.original_vin = vehicle_info.get('vin', '')
 
@@ -603,18 +603,42 @@ class EditVehicleDialog(ctk.CTkToplevel):
         add_right_click_menu(self.app, self.vin_entry)
 
         self.lbl_owner = ctk.CTkLabel(self, text=self.app.get_translation("lbl_owner"), font=self.app.font_normal)
-        self.lbl_owner.pack(pady=(10, 0))
+        self.lbl_owner.pack(pady=(5, 0))
         self.owner_entry = ctk.CTkEntry(self, width=300, font=self.app.font_normal)
         self.owner_entry.insert(0, vehicle_info.get('owner', ''))
         self.owner_entry.pack()
         add_right_click_menu(self.app, self.owner_entry)
 
         self.lbl_type = ctk.CTkLabel(self, text=self.app.get_translation("lbl_vehicle_type"), font=self.app.font_normal)
-        self.lbl_type.pack(pady=(10, 0))
+        self.lbl_type.pack(pady=(5, 0))
         self.type_entry = ctk.CTkEntry(self, width=300, font=self.app.font_normal)
         self.type_entry.insert(0, vehicle_info.get('vehicle_type', ''))
         self.type_entry.pack()
         add_right_click_menu(self.app, self.type_entry)
+
+        # Số Cont
+        self.lbl_cont = ctk.CTkLabel(self, text="Số Cont", font=self.app.font_normal)
+        self.lbl_cont.pack(pady=(5, 0))
+        self.cont_entry = ctk.CTkEntry(self, width=300, font=self.app.font_normal)
+        self.cont_entry.insert(0, vehicle_info.get('so_cont', '') or '')
+        self.cont_entry.pack()
+        add_right_click_menu(self.app, self.cont_entry)
+
+        # Tàu
+        self.lbl_tau = ctk.CTkLabel(self, text="Tàu", font=self.app.font_normal)
+        self.lbl_tau.pack(pady=(5, 0))
+        self.tau_entry = ctk.CTkEntry(self, width=300, font=self.app.font_normal)
+        self.tau_entry.insert(0, vehicle_info.get('tau', '') or '')
+        self.tau_entry.pack()
+        add_right_click_menu(self.app, self.tau_entry)
+
+        # Chuyến
+        self.lbl_chuyen = ctk.CTkLabel(self, text="Chuyến", font=self.app.font_normal)
+        self.lbl_chuyen.pack(pady=(5, 0))
+        self.chuyen_entry = ctk.CTkEntry(self, width=300, font=self.app.font_normal)
+        self.chuyen_entry.insert(0, vehicle_info.get('chuyen', '') or '')
+        self.chuyen_entry.pack()
+        add_right_click_menu(self.app, self.chuyen_entry)
 
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(pady=20)
@@ -637,7 +661,10 @@ class EditVehicleDialog(ctk.CTkToplevel):
             "original_vin": self.original_vin,
             "new_vin": new_vin,
             "owner": self.owner_entry.get().strip(),
-            "vehicle_type": self.type_entry.get().strip()
+            "vehicle_type": self.type_entry.get().strip(),
+            "so_cont": self.cont_entry.get().strip(),
+            "tau": self.tau_entry.get().strip(),
+            "chuyen": self.chuyen_entry.get().strip()
         }
         self.destroy()
 

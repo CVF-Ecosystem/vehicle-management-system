@@ -650,7 +650,7 @@ class VehicleManager(BaseManager):
             logger.error(f"Lỗi khi lấy danh sách loại xe tồn kho: {e}")
             return []
 
-    def update_vehicle_details(self, vin, owner, vehicle_type):
+    def update_vehicle_details(self, vin, owner, vehicle_type, so_cont=None, tau=None, chuyen=None):
         try:
             old_vehicle = None
             try:
@@ -659,14 +659,17 @@ class VehicleManager(BaseManager):
                 old_vehicle = None
 
             with self.conn:
-                self.conn.execute("UPDATE vehicles SET owner = ?, vehicle_type = ? WHERE vin = ? AND is_active = 1", (owner, vehicle_type, vin))
+                self.conn.execute(
+                    "UPDATE vehicles SET owner = ?, vehicle_type = ?, so_cont = ?, tau = ?, chuyen = ? WHERE vin = ? AND is_active = 1", 
+                    (owner, vehicle_type, so_cont, tau, chuyen, vin)
+                )
 
             try:
                 log_update(
                     table_name="vehicles",
                     record_id=str(vin),
                     old_value=old_vehicle or {},
-                    new_value={"owner": owner, "vehicle_type": vehicle_type},
+                    new_value={"owner": owner, "vehicle_type": vehicle_type, "so_cont": so_cont, "tau": tau, "chuyen": chuyen},
                 )
             except Exception as _audit_err:
                 logger.debug(f"Audit log failed (non-critical): {_audit_err}")
@@ -675,7 +678,7 @@ class VehicleManager(BaseManager):
             logger.exception(f"Lỗi khi cập nhật chi tiết cho VIN {vin}")
             return {"success": False, "message": str(e)}
 
-    def update_vin(self, old_vin, new_vin, owner, vehicle_type):
+    def update_vin(self, old_vin, new_vin, owner, vehicle_type, so_cont=None, tau=None, chuyen=None):
         self.begin_transaction()
         try:
             old_record = self.get_vehicle_by_vin(old_vin)
@@ -685,15 +688,19 @@ class VehicleManager(BaseManager):
             
             self.conn.execute("DELETE FROM vehicles WHERE vin = ?", (old_vin,))
             
-            # === THAY ĐỔI: Đổi tên cột 'shipment_id' -> 'dispatch_id' ===
+            # === THAY ĐỔI: Đổi tên cột 'shipment_id' -> 'dispatch_id' và lưu Cont, Tàu, Chuyến ===
             self.conn.execute("""
                 INSERT INTO vehicles (vin, owner, vehicle_type, date_in, date_out, status, 
-                                      transport_vehicle, driver_name, is_active, dispatch_id, location_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      transport_vehicle, driver_name, is_active, dispatch_id, location_id,
+                                      so_cont, tau, chuyen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 new_vin, owner, vehicle_type, old_record['date_in'], old_record['date_out'],
                 old_record['status'], old_record['transport_vehicle'], old_record['driver_name'], 
-                old_record['is_active'], old_record['dispatch_id'], old_record['location_id']
+                old_record['is_active'], old_record['dispatch_id'], old_record['location_id'],
+                so_cont if so_cont is not None else old_record.get('so_cont'),
+                tau if tau is not None else old_record.get('tau'),
+                chuyen if chuyen is not None else old_record.get('chuyen')
             ))
             # =========================================================
             
@@ -715,6 +722,9 @@ class VehicleManager(BaseManager):
                         "driver_name": old_record.get("driver_name"),
                         "dispatch_id": old_record.get("dispatch_id"),
                         "location_id": old_record.get("location_id"),
+                        "so_cont": so_cont,
+                        "tau": tau,
+                        "chuyen": chuyen,
                     },
                 )
             except Exception as _audit_err:
