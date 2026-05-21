@@ -181,14 +181,28 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
             location_id = location['id']
             
             vehicle_type = str(row.get("vehicle_type", "")).strip()
-            add_result = vehicle_manager.add_vehicle(vin, owner, vehicle_type, datetime.now(), location_id)
+            so_cont = str(row.get("so_cont", "")).strip() if "so_cont" in row else ""
+            tau = str(row.get("tau", "")).strip() if "tau" in row else ""
+            chuyen = str(row.get("chuyen", "")).strip() if "chuyen" in row else ""
+
+            add_result = vehicle_manager.add_vehicle(
+                vin, owner, vehicle_type, datetime.now(), location_id,
+                so_cont=so_cont, tau=tau, chuyen=chuyen
+            )
             
             if add_result["success"]:
                 location_manager.set_location_occupied(location_id, True)
                 result["success"] += 1
                 
                 imported_row = row.to_dict()
-                imported_row.update({'vin': vin, 'owner': owner, 'vehicle_type': vehicle_type})
+                imported_row.update({
+                    'vin': vin, 
+                    'owner': owner, 
+                    'vehicle_type': vehicle_type,
+                    'so_cont': so_cont,
+                    'tau': tau,
+                    'chuyen': chuyen
+                })
                 result["imported_data"].append(imported_row)
             else:
                 result["errors"] += 1

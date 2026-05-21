@@ -148,6 +148,11 @@ class BaseManager:
             self._upgrade_table_if_needed('vehicles', 'location_id', 'INTEGER REFERENCES locations(id)')
             self._upgrade_table_if_needed('drivers', 'cccd', 'TEXT')
             
+            # Nâng cấp các cột thông tin từ Excel nhập bãi (Cont, Tàu, Chuyến)
+            self._upgrade_table_if_needed('vehicles', 'so_cont', 'TEXT')
+            self._upgrade_table_if_needed('vehicles', 'tau', 'TEXT')
+            self._upgrade_table_if_needed('vehicles', 'chuyen', 'TEXT')
+            
             # Phase 1B: Soft Delete columns
             self._upgrade_table_if_needed('vehicles', 'is_deleted', 'INTEGER DEFAULT 0')
             self._upgrade_table_if_needed('vehicles', 'deleted_at', 'TEXT')

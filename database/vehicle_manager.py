@@ -237,7 +237,7 @@ class VehicleManager(BaseManager):
             "errors": []
         }
 
-    def _handle_existing_vin(self, vin, owner, vehicle_type, date_in, location_id):
+    def _handle_existing_vin(self, vin, owner, vehicle_type, date_in, location_id, so_cont=None, tau=None, chuyen=None):
         cursor = self.conn.cursor()
         cursor.execute("SELECT status, is_active, location_id FROM vehicles WHERE vin=?", (vin,))
         result = cursor.fetchone()
@@ -251,16 +251,17 @@ class VehicleManager(BaseManager):
         if result['location_id']:
             self.location_manager.set_location_occupied(result['location_id'], False)
 
-        # === THAY ĐỔI: Đổi tên cột 'shipment_id' -> 'dispatch_id' ===
+        # === THAY ĐỔI: Đổi tên cột 'shipment_id' -> 'dispatch_id' và lưu Cont, Tàu, Chuyến ===
         self.conn.execute("""
             UPDATE vehicles SET owner=?, vehicle_type=?, date_in=?, status=?,
-            date_out=NULL, transport_vehicle=NULL, driver_name=NULL, is_active=1, dispatch_id=NULL, location_id=?
+            date_out=NULL, transport_vehicle=NULL, driver_name=NULL, is_active=1, dispatch_id=NULL, location_id=?,
+            so_cont=?, tau=?, chuyen=?
             WHERE vin=?
-        """, (owner, vehicle_type, date_in.isoformat(), STATUS_IN_STOCK, location_id, vin))
+        """, (owner, vehicle_type, date_in.isoformat(), STATUS_IN_STOCK, location_id, so_cont, tau, chuyen, vin))
         # =========================================================
         return {"success": True, "message": f"VIN {vin} đã được nhập lại thành công."}
 
-    def add_vehicle(self, vin, owner, vehicle_type, date_in, location_id):
+    def add_vehicle(self, vin, owner, vehicle_type, date_in, location_id, so_cont=None, tau=None, chuyen=None):
         """
         Thêm một xe mới vào CSDL.
         
@@ -270,6 +271,9 @@ class VehicleManager(BaseManager):
             vehicle_type: Loại xe (sẽ được normalize)
             date_in: Ngày nhập (datetime object)
             location_id: ID vị trí (có thể None)
+            so_cont: Số Container (tùy chọn)
+            tau: Tàu vận chuyển (tùy chọn)
+            chuyen: Chuyến (tùy chọn)
         
         Returns:
             dict: {"success": bool, "message": str}
@@ -285,8 +289,8 @@ class VehicleManager(BaseManager):
             
             with self.conn:
                 self.conn.execute(
-                    "INSERT INTO vehicles(vin, owner, vehicle_type, date_in, status, is_active, location_id) VALUES (?, ?, ?, ?, ?, 1, ?)",
-                    (normalized_vin, normalized_owner, normalized_type, date_in.isoformat(), STATUS_IN_STOCK, location_id)
+                    "INSERT INTO vehicles(vin, owner, vehicle_type, date_in, status, is_active, location_id, so_cont, tau, chuyen) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
+                    (normalized_vin, normalized_owner, normalized_type, date_in.isoformat(), STATUS_IN_STOCK, location_id, so_cont, tau, chuyen)
                 )
 
             try:
@@ -300,6 +304,9 @@ class VehicleManager(BaseManager):
                         "date_in": date_in.isoformat(),
                         "status": STATUS_IN_STOCK,
                         "location_id": location_id,
+                        "so_cont": so_cont,
+                        "tau": tau,
+                        "chuyen": chuyen,
                     },
                 )
             except Exception as _audit_err:
@@ -309,8 +316,8 @@ class VehicleManager(BaseManager):
             try:
                 from data_normalizer import normalizer as _normalizer
                 if normalized_owner and normalized_owner not in _normalizer._known_owners:
-                    _normalizer._known_owners.append(normalized_owner)
-                    _normalizer._known_owners.sort(key=lambda x: x.lower())
+                     _normalizer._known_owners.append(normalized_owner)
+                     _normalizer._known_owners.sort(key=lambda x: x.lower())
             except Exception:
                 pass
             return {"success": True, "message": "Thêm xe mới thành công.", "normalized_owner": normalized_owner}
@@ -333,7 +340,10 @@ class VehicleManager(BaseManager):
                 validated["owner"], 
                 normalize_vehicle_type(vehicle_type) if vehicle_type else "",
                 date_in, 
-                location_id
+                location_id,
+                so_cont=so_cont,
+                tau=tau,
+                chuyen=chuyen
             )
         except sqlite3.OperationalError as e:
             logger.error(f"Lỗi thao tác CSDL khi thêm xe {vin}: {e}")

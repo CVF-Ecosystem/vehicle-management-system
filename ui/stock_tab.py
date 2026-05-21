@@ -420,6 +420,9 @@ class StockTab:
                 "vehicle_type": self.app.get_translation("tree_type"),
                 "full_location_name": self.app.get_translation("tree_location"),
                 "date_in": self.app.get_translation("tree_date_in"),
+                "so_cont": "Số Cont",
+                "tau": "Tàu",
+                "chuyen": "Chuyến",
                 "days_in_stock": self.app.get_translation("excel_days_in_stock")
             }
             highlight_config = {"threshold": threshold, "column_name": self.app.get_translation("excel_days_in_stock")}
@@ -503,6 +506,9 @@ class StockTab:
                 "vehicle_type": self.app.get_translation("tree_type"),
                 "date_in": self.app.get_translation("tree_date_in"),
                 "date_out": self.app.get_translation("tree_date_out"),
+                "so_cont": "Số Cont",
+                "tau": "Tàu",
+                "chuyen": "Chuyến",
                 "transport_vehicle": self.app.get_translation("tree_transport_vehicle"),
                 "driver_name": self.app.get_translation("tree_driver"),
                 "days_in_stock": self.app.get_translation("excel_days_in_stock"),
@@ -659,6 +665,9 @@ class StockTab:
                 "vehicle_type": self.app.get_translation("tree_type"),
                 "full_location_name": self.app.get_translation("tree_location"),
                 "date_in": self.app.get_translation("tree_date_in"),
+                "so_cont": "Số Cont",
+                "tau": "Tàu",
+                "chuyen": "Chuyến",
             }
             result = excel_generator.generate_excel_report(file_path, data, cols)
 
