@@ -75,6 +75,13 @@ class BaseManager:
             BaseManager._conn.row_factory = sqlite3.Row
             # Enforce referential integrity — SQLite defaults to OFF
             BaseManager._conn.execute("PRAGMA foreign_keys = ON")
+            # Tối ưu hóa hiệu năng bằng chế độ WAL (Write-Ahead Logging) và Synchronous = NORMAL
+            try:
+                BaseManager._conn.execute("PRAGMA journal_mode = WAL")
+                BaseManager._conn.execute("PRAGMA synchronous = NORMAL")
+                BaseManager._conn.execute("PRAGMA cache_size = -10000")  # 10MB cache
+            except sqlite3.Error as e:
+                logger.warning(f"Không thể thiết lập các thông số PRAGMA tối ưu: {e}")
             BaseManager._db_path = target_db
 
             self.conn = BaseManager._conn

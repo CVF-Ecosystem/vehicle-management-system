@@ -206,6 +206,12 @@ class AuditRepository:
         """Tạo connection mới đến database."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute("PRAGMA cache_size = -5000")  # 5MB cache
+        except sqlite3.Error:
+            pass
         return conn
     
     def _ensure_table_exists(self):
