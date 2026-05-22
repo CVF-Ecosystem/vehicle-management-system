@@ -1,6 +1,7 @@
 # database/location_manager.py
 import sqlite3
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +12,8 @@ class LocationManager(BaseManager):
     Quản lý tất cả các hoạt động liên quan đến bảng 'locations'.
     Cung cấp một giao diện để thêm, truy vấn và cập nhật trạng thái vị trí.
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, db_path: Optional[str] = None):
+        super().__init__(db_path)
 
     def add_locations_batch(self, locations_data):
         """

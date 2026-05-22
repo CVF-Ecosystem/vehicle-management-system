@@ -100,6 +100,9 @@ DEFAULT_IMPORT_FOLDER = os.getenv("DEFAULT_IMPORT_FOLDER", get_data_path("import
 # --- Web Dashboard ---
 DASHBOARD_PORT: int = 8502
 
+# --- Audit Log Retention ---
+AUDIT_LOG_RETENTION_DAYS: int = 365  # Số ngày giữ audit log trước khi archive
+
 # --- VIN Validation ---
 # True = Bắt buộc VIN đúng 17 ký tự + checksum hợp lệ (theo chuẩn ISO 3779)
 # False = Chấp nhận VIN từ 6-17 ký tự, không kiểm tra checksum (có cảnh báo)

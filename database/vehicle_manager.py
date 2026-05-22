@@ -1,10 +1,13 @@
 # database/vehicle_manager.py
+from __future__ import annotations
+
 import sqlite3
 import logging
 import json
 import hashlib
 import threading
 from datetime import datetime, timezone, timedelta
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import os
 
 logger = logging.getLogger(__name__)
@@ -16,7 +19,7 @@ from exceptions import ValidationError, VINValidationError, DateValidationError,
 from database.audit_repository import log_create, log_update, log_delete, log_audit, AuditAction
 
 class VehicleManager(BaseManager):
-    def clear_archived_deleted_vehicles(self):
+    def clear_archived_deleted_vehicles(self) -> Dict[str, Any]:
         """
         Xóa toàn bộ bản ghi trong bảng deleted_vehicles_archive (xe đã xóa vĩnh viễn).
         Returns:
@@ -33,14 +36,14 @@ class VehicleManager(BaseManager):
         except Exception as e:
             logger.exception(f"Lỗi khi xóa toàn bộ archive: {e}")
             return {"success": False, "message": str(e), "count": 0}
-    def __init__(self):
-        super().__init__()
-        self.location_manager = LocationManager()
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        super().__init__(db_path)
+        self.location_manager = LocationManager(db_path)
         # Nạp danh sách chủ hàng vào normalizer ngay (chỉ đọc, nhanh)
         self._refresh_known_owners()
         # Normalization nặng được chạy qua start_background_normalization()
 
-    def _refresh_known_owners(self):
+    def _refresh_known_owners(self) -> None:
         """Cập nhật danh sách chủ hàng trong normalizer từ DB hiện tại."""
         try:
             from data_normalizer import normalizer as _normalizer

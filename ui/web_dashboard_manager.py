@@ -7,6 +7,7 @@ Tách từ main.py để giảm kích thước God class InventoryApp (7.1-ARCH-
 
 import logging
 import os
+import secrets
 import socket
 import subprocess
 import threading
@@ -33,6 +34,8 @@ class WebDashboardManager:
         self.app = app_instance
         self._process = None
         self._port = None
+        # New session token each time the manager is created (i.e. each app launch)
+        self._session_token: str = secrets.token_urlsafe(32)
 
     @property
     def is_running(self) -> bool:
@@ -56,7 +59,7 @@ class WebDashboardManager:
     def launch(self):
         """Khởi động Web Dashboard (Flask)."""
         if self.is_running:
-            url = f"http://localhost:{self._port}"
+            url = f"http://localhost:{self._port}?token={self._session_token}"
             msg = self.app.get_translation("web_dashboard_already_running").format(url=url)
             self.app.show_toast(msg)
             webbrowser.open(url)
@@ -113,6 +116,7 @@ class WebDashboardManager:
             env['VEHICLE_APP_DB_PATH'] = config.get_data_path("vehicle_management_v1.0.db")
             env['VEHICLE_APP_VERSION'] = APP_VERSION_DISPLAY
             env['VEHICLE_DASH_PORT']   = str(self._port)
+            env['VEHICLE_DASH_TOKEN']  = self._session_token
             
             # --- FIX: PyInstaller DLL Conflict ---
             # PyInstaller thêm _MEIPASS vào biến PATH. Khi gọi subprocess chạy bằng một phiên bản Python khác (v.d global streamlit),
@@ -133,7 +137,7 @@ class WebDashboardManager:
                 env=env,
             )
 
-            url = f"http://localhost:{self._port}"
+            url = f"http://localhost:{self._port}?token={self._session_token}"
 
             # Poll until server is ready (max 10 seconds)
             import time

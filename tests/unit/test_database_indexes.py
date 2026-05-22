@@ -28,7 +28,7 @@ class TestIndexExistence:
         manager = BaseManager(db_path)
         # Schema is automatically created in __init__
         yield manager
-        manager.close()
+        BaseManager.close_connection()
     
     def test_vehicle_vin_index_exists(self, manager):
         """Test idx_vehicles_vin index exists."""
@@ -122,7 +122,7 @@ class TestIndexColumns:
     
     def test_vin_index_on_correct_column(self, manager):
         """Test VIN index is on vin column."""
-        conn = sqlite3.connect(manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         cursor.execute("PRAGMA index_info(idx_vehicles_vin)")
@@ -133,7 +133,7 @@ class TestIndexColumns:
     
     def test_status_index_on_correct_column(self, manager):
         """Test status index is on status column."""
-        conn = sqlite3.connect(manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         cursor.execute("PRAGMA index_info(idx_vehicles_status)")
@@ -144,7 +144,7 @@ class TestIndexColumns:
     
     def test_status_active_composite_index(self, manager):
         """Test status_active is composite index on (status, is_active)."""
-        conn = sqlite3.connect(manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         cursor.execute("PRAGMA index_info(idx_vehicles_status_active)")
@@ -157,7 +157,7 @@ class TestIndexColumns:
     
     def test_deleted_at_partial_index_has_where_clause(self, manager):
         """Test deleted_at is partial index with WHERE clause."""
-        conn = sqlite3.connect(manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         cursor.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_vehicles_deleted_at'")
@@ -193,14 +193,14 @@ class TestIndexFunctionality:
             vin=vin,
             owner="Test Owner",
             vehicle_type="Car",
-            license_plate="ABC123",
             date_in=datetime.now(),
+            location_id=None,
         )
         
         assert result['success']
         
         # Search by VIN should be fast with index
-        vehicle = vehicle_manager.search_vehicle_by_vin(vin)
+        vehicle = vehicle_manager.get_vehicle_by_vin(vin)
         
         assert vehicle is not None
         assert vehicle['vin'] == vin
@@ -214,16 +214,16 @@ class TestIndexFunctionality:
                 vin=vin,
                 owner=f"Owner {i}",
                 vehicle_type="Car",
-                license_plate=f"ABC{100+i}",
                 date_in=datetime.now(),
+                location_id=None,
             )
         
         # Filter by status should be efficient
-        vehicles = vehicle_manager.get_vehicles_by_status('in_stock')
+        vehicles = vehicle_manager.search_all_vehicles(status_filter='in_stock')
         
         assert len(vehicles) >= 5
         for v in vehicles:
-            assert v['status'] == 'in_stock'
+            assert v['status'] == 'IN_STOCK'
     
     def test_date_range_index_efficiency(self, vehicle_manager):
         """Test date indexes enable range queries."""
@@ -234,12 +234,12 @@ class TestIndexFunctionality:
                 vin=vin,
                 owner=f"Owner {i}",
                 vehicle_type="Car",
-                license_plate=f"XYZ{i}",
                 date_in=datetime.now(),
+                location_id=None,
             )
         
         # Range query should work efficiently
-        vehicles = vehicle_manager.get_all_vehicles()
+        vehicles = vehicle_manager.search_all_vehicles()
         
         assert len(vehicles) >= 3
 
@@ -262,22 +262,26 @@ class TestIndexPerformanceMetrics:
     
     def test_unique_index_enforces_uniqueness(self, vehicle_manager):
         """Test unique index enforces constraint."""
+        from database.entity_manager import EntityManager
+        entity_manager = EntityManager(BaseManager._db_path)
         # Add a driver with CCCD
-        result1 = vehicle_manager.entity_manager.add_driver(
+        result1 = entity_manager.add_driver(
             name="Driver 1",
             phone="0123456789",
-            cccd="123456789012"
+            cccd="123456789012",
+            notes=""
         )
         
         assert result1['success']
         
         # Try to add another driver with same CCCD - should fail due to unique constraint
-        with pytest.raises(Exception):  # Will raise due to unique constraint
-            vehicle_manager.entity_manager.add_driver(
-                name="Driver 2",
-                phone="0987654321",
-                cccd="123456789012"
-            )
+        result2 = entity_manager.add_driver(
+            name="Driver 2",
+            phone="0987654321",
+            cccd="123456789012",
+            notes=""
+        )
+        assert result2['success'] is False
     
     def test_composite_index_helps_multi_column_filter(self, vehicle_manager):
         """Test composite index improves multi-column filtering."""
@@ -288,24 +292,21 @@ class TestIndexPerformanceMetrics:
                 vin=vin,
                 owner=f"Owner {i}",
                 vehicle_type="Car",
-                license_plate=f"PLT{i:03d}",
                 date_in=datetime.now(),
+                location_id=None,
             )
         
         # Query that uses composite index
-        conn = sqlite3.connect(vehicle_manager.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        cursor = vehicle_manager.conn.cursor()
         
         cursor.execute(
             "SELECT * FROM vehicles WHERE status = ? AND is_active = ?",
-            ('in_stock', 1)
+            ('IN_STOCK', 1)
         )
         results = cursor.fetchall()
         
         # Should find vehicles efficiently
         assert len(results) > 0
-        conn.close()
     
     def test_partial_index_filters_deleted(self, vehicle_manager):
         """Test partial index on deleted_at correctly filters."""
@@ -315,8 +316,8 @@ class TestIndexPerformanceMetrics:
             vin=vin,
             owner="Test",
             vehicle_type="Car",
-            license_plate="TST001",
             date_in=datetime.now(),
+            location_id=None,
         )
         
         assert result['success']
@@ -325,7 +326,7 @@ class TestIndexPerformanceMetrics:
         vehicle_manager.soft_delete_vehicle(vin, "admin", "Testing")
         
         # Partial index should efficiently filter non-deleted records
-        all_vehicles = vehicle_manager.get_all_vehicles()
+        all_vehicles = vehicle_manager.search_all_vehicles()
         
         # Vehicle should not be in normal list (it's deleted)
         vins = [v['vin'] for v in all_vehicles]
@@ -345,9 +346,8 @@ class TestIndexStatistics:
     def manager(self, db_path):
         """Initialize a database manager."""
         manager = BaseManager(db_path)
-        manager.check_and_update_schema()
         yield manager
-        manager.close()
+        BaseManager.close_connection()
     
     def test_all_indexes_are_named_consistently(self, manager):
         """Test all indexes follow naming convention."""
@@ -357,6 +357,8 @@ class TestIndexStatistics:
             indexes = manager.get_table_indexes(table)
             for idx in indexes:
                 name = idx['name']
+                if name.startswith('sqlite_'):
+                    continue
                 # Should start with 'idx_'
                 assert name.startswith('idx_'), f"Index {name} doesn't follow naming convention"
     
@@ -390,7 +392,7 @@ class TestIndexQueryPlanning:
     
     def test_vin_search_uses_index(self, vehicle_manager):
         """Test VIN search query uses index in query plan."""
-        conn = sqlite3.connect(vehicle_manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         # Get query plan for VIN search
@@ -405,7 +407,7 @@ class TestIndexQueryPlanning:
     
     def test_status_filter_uses_index(self, vehicle_manager):
         """Test status filter uses index."""
-        conn = sqlite3.connect(vehicle_manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         # Get query plan for status filter
@@ -417,7 +419,7 @@ class TestIndexQueryPlanning:
     
     def test_date_range_query_uses_index(self, vehicle_manager):
         """Test date range query can use index."""
-        conn = sqlite3.connect(vehicle_manager.db_path)
+        conn = sqlite3.connect(BaseManager._db_path)
         cursor = conn.cursor()
         
         # Get query plan for date range
@@ -457,8 +459,8 @@ class TestIndexIntegration:
                 vin=vin,
                 owner=f"Owner {i}",
                 vehicle_type="Car",
-                license_plate=f"ABC{100+i}",
                 date_in=datetime.now(),
+                location_id=None,
             )
         
         # Complex search that could use multiple indexes
@@ -477,15 +479,15 @@ class TestIndexIntegration:
             vin=vin,
             owner="Test",
             vehicle_type="Car",
-            license_plate="TST999",
             date_in=datetime.now(),
+            location_id=None,
         )
         
         # Soft delete
         vehicle_manager.soft_delete_vehicle(vin, "admin", "test")
         
         # Deleted vehicle should not appear in normal searches (using is_deleted index)
-        all_vehicles = vehicle_manager.get_all_vehicles()
+        all_vehicles = vehicle_manager.search_all_vehicles()
         vins = [v['vin'] for v in all_vehicles]
         
         assert vin not in vins

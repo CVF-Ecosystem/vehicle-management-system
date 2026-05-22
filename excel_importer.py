@@ -154,9 +154,35 @@ def import_vehicles_from_excel(path, vehicle_manager, location_manager, normaliz
 
     total = len(df)
     result = {"success": 0, "errors": 0, "total": total, "error_details": [], "imported_data": []}
-    
+
+    # === PRE-FLIGHT: Check DB for VINs that already exist (fail-fast) ===
+    all_vins = df['vin'].tolist()
+    if all_vins:
+        try:
+            placeholders = ','.join(['?'] * len(all_vins))
+            cursor = vehicle_manager.conn.execute(
+                f"SELECT vin FROM vehicles WHERE vin IN ({placeholders})"
+                " AND is_active = 1 AND (is_deleted IS NULL OR is_deleted = 0)",
+                all_vins,
+            )
+            existing_vins = [row[0] for row in cursor.fetchall()]
+            if existing_vins:
+                display = ', '.join(existing_vins[:5])
+                extra = f" và {len(existing_vins) - 5} VIN khác" if len(existing_vins) > 5 else ""
+                error_msg = (
+                    f"Phát hiện {len(existing_vins)} VIN đã tồn tại trong hệ thống: "
+                    f"{display}{extra}. Import bị hủy để đảm bảo toàn vẹn dữ liệu."
+                )
+                result["errors"] = len(existing_vins)
+                result["error_details"] = [error_msg]
+                return result
+        except Exception as _pre_err:
+            logging.warning(f"Không thể kiểm tra VIN trùng lặp với DB trước khi import: {_pre_err}")
+            # Continue — per-row add_vehicle calls will still catch duplicates
+    # ====================================================================
+
     report_progress(0, total, f"Đang xử lý 0/{total} xe...")
-    
+
     # === LOGIC MỚI: Bỏ qua lỗi và tiếp tục ===
     vehicle_manager.begin_transaction()
     try:

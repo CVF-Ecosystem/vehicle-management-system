@@ -90,7 +90,71 @@ jobs:
           retention-days: 7
 
   # ============================================================
-  # Job 3: Security Scan
+  # Job 3: Type Checking (mypy)
+  # ============================================================
+  type-check:
+    name: Type Check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install mypy types-openpyxl
+
+      - name: Run mypy on annotated core modules
+        run: |
+          mypy \
+            database/base_manager.py \
+            database/entity_manager.py \
+            database/dispatch_manager.py \
+            database/vehicle_manager.py \
+            database/migrations/migration_runner.py \
+            ui/tab_manager.py \
+            --ignore-missing-imports \
+            --no-strict-optional \
+            --warn-return-any
+        continue-on-error: true
+
+  # ============================================================
+  # Job 4: Windows Smoke Tests
+  # ============================================================
+  windows-test:
+    name: Windows Smoke Tests (Python 3.11)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run unit tests (no GUI)
+        env:
+          PYTHONIOENCODING: "UTF-8"
+        run: |
+          pytest tests/unit -v --tb=short -m "not ui"
+
+  # ============================================================
+  # Job 5: Security Scan
   # ============================================================
   security:
     name: Security Scan

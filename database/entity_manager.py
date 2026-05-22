@@ -1,6 +1,9 @@
 # database/entity_manager.py
+from __future__ import annotations
+
 import sqlite3
 import logging
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -8,9 +11,9 @@ from .base_manager import BaseManager
 
 class EntityManager(BaseManager):
     """Quản lý các đối tượng phụ như Tài xế và Xe vận chuyển."""
-    
-    def __init__(self):
-        super().__init__()
+
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        super().__init__(db_path)
         # Bước 1: Chuẩn hóa và gộp các tài xế trùng lặp trong DB
         self._normalize_all_existing_drivers()
         # Bước 2: Nạp danh sách tài xế vào normalizer

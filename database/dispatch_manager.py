@@ -1,7 +1,10 @@
 # database/dispatch_manager.py
+from __future__ import annotations
+
 import sqlite3
 import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 from .base_manager import BaseManager
@@ -11,12 +14,12 @@ from database.audit_repository import log_audit, log_update, AuditAction
 
 class DispatchManager(BaseManager):
     """Quản lý các hoạt động liên quan đến bảng 'dispatches' (Phiếu xuất/Lô hàng xuất)."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         super().__init__()
         self.location_manager = LocationManager()
 
-    def create_dispatch(self, driver_id, transport_vehicle_id):
+    def create_dispatch(self, driver_id: int, transport_vehicle_id: int) -> Optional[int]:
         """Tạo một phiếu xuất mới với trạng thái 'OPEN'."""
         try:
             with self.conn:
@@ -50,7 +53,7 @@ class DispatchManager(BaseManager):
             logger.error(f"Lỗi khi tạo phiếu xuất: {e}")
             return None
 
-    def add_vehicle_to_dispatch(self, vin, dispatch_id):
+    def add_vehicle_to_dispatch(self, vin: str, dispatch_id: int) -> bool:
         """Gán một xe vào một phiếu xuất đang mở."""
         try:
             with self.conn:
@@ -83,7 +86,7 @@ class DispatchManager(BaseManager):
             logger.error(f"Lỗi khi gán xe vào phiếu xuất: {e}")
             return False
 
-    def get_open_dispatch_details(self):
+    def get_open_dispatch_details(self) -> Dict[int, Any]:
         """Lấy thông tin chi tiết về các phiếu xuất đang mở, bao gồm danh sách xe."""
         query = """
             SELECT d.id, dr.name as driver_name, tv.license_plate, v.vin, v.owner, v.vehicle_type
@@ -114,7 +117,7 @@ class DispatchManager(BaseManager):
             logger.error(f"Lỗi khi lấy chi tiết phiếu xuất đang mở: {e}")
             return {}
 
-    def cancel_dispatch(self, dispatch_id):
+    def cancel_dispatch(self, dispatch_id: int) -> Dict[str, Any]:
         """Hủy một phiếu xuất đang mở."""
         self.begin_transaction()
         try:
@@ -147,7 +150,7 @@ class DispatchManager(BaseManager):
             logger.error(f"Lỗi khi hủy phiếu xuất #{dispatch_id}: {e}")
             return {"success": False, "message": str(e)}
 
-    def complete_dispatch(self, dispatch_id):
+    def complete_dispatch(self, dispatch_id: int) -> Dict[str, Any]:
         """
         Hoàn tất một phiếu xuất: cập nhật trạng thái xe và giải phóng vị trí.
         FIXED Issue #10: Wrapped in transaction for atomicity.

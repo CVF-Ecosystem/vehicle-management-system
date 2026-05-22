@@ -1,8 +1,11 @@
 # database/base_manager.py
+from __future__ import annotations
+
 import sqlite3
 import logging
 import re
 import threading
+from typing import Any, Dict, List, Optional
 
 # Import config để lấy DB_FILE mặc định
 # Nhưng cho phép override qua constructor parameter
@@ -34,7 +37,7 @@ class BaseManager:
     _db_path = None  # Track current DB path
     _lock = threading.Lock()  # Thread safety for singleton creation
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None) -> None:
         """
         Khởi tạo BaseManager với thread-safe singleton pattern.
         
@@ -70,13 +73,27 @@ class BaseManager:
             logger.info(f"Đang tạo kết nối mới tới database: {target_db}")
             BaseManager._conn = sqlite3.connect(target_db, check_same_thread=False)
             BaseManager._conn.row_factory = sqlite3.Row
+            # Enforce referential integrity — SQLite defaults to OFF
+            BaseManager._conn.execute("PRAGMA foreign_keys = ON")
             BaseManager._db_path = target_db
-            
-            self.conn = BaseManager._conn
-            
-            self._setup_schema()
 
-    def _setup_schema(self):
+            self.conn = BaseManager._conn
+
+            self._setup_schema()
+            self._run_migrations()
+
+    def _run_migrations(self) -> None:
+        """Chạy các schema migrations còn thiếu."""
+        """Chạy các schema migrations còn thiếu."""
+        try:
+            from database.migrations.migration_runner import run_migrations
+            ran = run_migrations(self.conn)
+            if ran:
+                logger.info(f"Đã chạy {ran} schema migration(s) thành công.")
+        except Exception as e:
+            logger.error(f"Schema migration thất bại: {e}", exc_info=True)
+
+    def _setup_schema(self) -> None:
         """
         Hàm trung tâm để tạo và nâng cấp tất cả các bảng trong CSDL.
         """
@@ -218,7 +235,7 @@ class BaseManager:
 
         logger.info("Schema CSDL đã được cập nhật.")
 
-    def _validate_identifier(self, name: str, identifier_type: str = "column") -> bool:
+    def _validate_identifier(self, name: str, identifier_type: str = "column") -> bool:  # noqa: D401
         """
         Validate SQL identifier (table name or column name) để ngăn chặn SQL injection.
         
@@ -254,7 +271,7 @@ class BaseManager:
         
         return True
 
-    def _upgrade_table_if_needed(self, table_name, column_name, column_definition):
+    def _upgrade_table_if_needed(self, table_name: str, column_name: str, column_definition: str) -> None:
         """Hàm tiện ích để thêm một cột vào bảng nếu nó chưa tồn tại."""
         # Validate inputs để ngăn chặn SQL injection
         try:
@@ -282,7 +299,7 @@ class BaseManager:
             logger.info(f"Thêm cột '{column_name}' vào bảng '{table_name}'.")
             self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
-    def _create_indexes_if_needed(self):
+    def _create_indexes_if_needed(self) -> None:
         """Tạo các chỉ mục để tối ưu hóa truy vấn."""
         with self.conn:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicles_vin ON vehicles (vin)")
@@ -330,20 +347,20 @@ class BaseManager:
             
             logger.info("All performance indexes created successfully")
 
-    def begin_transaction(self):
+    def begin_transaction(self) -> None:
         """Bắt đầu một giao dịch CSDL."""
         self.conn.execute("BEGIN TRANSACTION")
 
-    def commit_transaction(self):
+    def commit_transaction(self) -> None:
         """Lưu lại các thay đổi trong giao dịch hiện tại."""
         self.conn.commit()
 
-    def rollback_transaction(self):
+    def rollback_transaction(self) -> None:
         """Hủy bỏ các thay đổi trong giao dịch hiện tại."""
         self.conn.rollback()
 
     @staticmethod
-    def get_new_connection(db_file_path):
+    def get_new_connection(db_file_path: str) -> Optional[sqlite3.Connection]:
         """Tạo và trả về một kết nối CSDL mới đến một file cụ thể."""
         try:
             conn = sqlite3.connect(db_file_path, check_same_thread=False)
@@ -353,7 +370,7 @@ class BaseManager:
             logger.error(f"Không thể tạo kết nối đến file CSDL: {db_file_path}. Lỗi: {e}")
             return None
 
-    def get_table_indexes(self, table_name: str):
+    def get_table_indexes(self, table_name: str) -> List[Dict[str, Any]]:
         """
         Get list of indexes for a table.
         
@@ -390,7 +407,7 @@ class BaseManager:
             return []
 
     @staticmethod
-    def close_connection():
+    def close_connection() -> None:
         """Đóng kết nối CSDL khi ứng dụng thoát."""
         if BaseManager._conn:
             BaseManager._conn.close()

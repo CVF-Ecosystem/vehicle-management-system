@@ -612,35 +612,155 @@ class AuditRepository:
     
     def cleanup_old_entries(self, days_to_keep: int = 365) -> int:
         """
-        Xóa các audit entries cũ hơn số ngày chỉ định.
-        
+        Xóa vĩnh viễn các audit entries cũ hơn số ngày chỉ định.
+
+        Lưu ý: Dùng archive_old_logs() nếu muốn giữ lại records trong bảng archive
+        thay vì xóa hoàn toàn.
+
         Args:
             days_to_keep: Số ngày giữ lại (mặc định 365)
-        
+
         Returns:
             int: Số entries đã xóa
         """
         from datetime import timedelta
         cutoff_date = datetime.now() - timedelta(days=days_to_keep)
-        
+
         with self._get_connection() as conn:
-            # First count how many will be deleted
             count_result = conn.execute(
                 "SELECT COUNT(*) FROM audit_logs WHERE created_at < ?",
                 (cutoff_date.isoformat(),)
             ).fetchone()
             count_to_delete = count_result[0] if count_result else 0
-            
+
             if count_to_delete > 0:
-                # Archive before delete (optional - could export to file)
                 conn.execute(
                     "DELETE FROM audit_logs WHERE created_at < ?",
                     (cutoff_date.isoformat(),)
                 )
                 conn.commit()
                 logger.info(f"Cleaned up {count_to_delete} old audit entries (older than {days_to_keep} days)")
-        
+
         return count_to_delete
+
+    def _ensure_archive_table(self, conn: sqlite3.Connection) -> None:
+        """Tạo bảng audit_logs_archive nếu chưa tồn tại (cùng schema với audit_logs)."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs_archive (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                username TEXT DEFAULT 'System',
+                action TEXT NOT NULL,
+                table_name TEXT,
+                record_id TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                details TEXT,
+                ip_address TEXT,
+                created_at TEXT NOT NULL,
+                archived_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_archive_audit_created_at
+            ON audit_logs_archive(created_at)
+        """)
+
+    def archive_old_logs(self, before_days: int = 365) -> int:
+        """
+        Di chuyển các audit entries cũ hơn before_days ngày sang bảng audit_logs_archive.
+
+        Idempotent: chạy lại sẽ SKIP records đã archive (theo id).
+
+        Args:
+            before_days: Số ngày; entries cũ hơn sẽ được archive (mặc định 365)
+
+        Returns:
+            int: Số entries đã được archive
+        """
+        from datetime import timedelta
+        cutoff_date = datetime.now() - timedelta(days=before_days)
+        archived_at = datetime.now().isoformat()
+
+        with self._get_connection() as conn:
+            self._ensure_archive_table(conn)
+
+            count_result = conn.execute(
+                "SELECT COUNT(*) FROM audit_logs WHERE created_at < ?",
+                (cutoff_date.isoformat(),)
+            ).fetchone()
+            count_to_archive = count_result[0] if count_result else 0
+
+            if count_to_archive == 0:
+                logger.info(f"archive_old_logs: không có entries nào cũ hơn {before_days} ngày.")
+                return 0
+
+            # Copy sang archive (IGNORE để idempotent)
+            conn.execute("""
+                INSERT OR IGNORE INTO audit_logs_archive
+                    (id, user_id, username, action, table_name, record_id,
+                     old_value, new_value, details, ip_address, created_at, archived_at)
+                SELECT id, user_id, username, action, table_name, record_id,
+                       old_value, new_value, details, ip_address, created_at, ?
+                FROM audit_logs
+                WHERE created_at < ?
+            """, (archived_at, cutoff_date.isoformat()))
+
+            # Xóa khỏi bảng chính sau khi đã copy
+            conn.execute(
+                "DELETE FROM audit_logs WHERE created_at < ?",
+                (cutoff_date.isoformat(),)
+            )
+            conn.commit()
+
+        logger.info(f"archive_old_logs: đã archive {count_to_archive} entries (cũ hơn {before_days} ngày).")
+        return count_to_archive
+
+    def get_log_stats(self) -> Dict[str, Any]:
+        """
+        Trả về thống kê tổng quan về audit logs.
+
+        Returns:
+            dict với các keys:
+                - total_records: tổng số entries trong bảng chính
+                - oldest_record: ISO timestamp entry cũ nhất (None nếu rỗng)
+                - newest_record: ISO timestamp entry mới nhất (None nếu rỗng)
+                - archived_records: tổng số entries trong bảng archive
+                - size_estimate_bytes: ước tính kích thước (dùng page_count * page_size)
+        """
+        with self._get_connection() as conn:
+            total_result = conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()
+            total_records = total_result[0] if total_result else 0
+
+            oldest_result = conn.execute(
+                "SELECT MIN(created_at) FROM audit_logs"
+            ).fetchone()
+            oldest_record = oldest_result[0] if oldest_result else None
+
+            newest_result = conn.execute(
+                "SELECT MAX(created_at) FROM audit_logs"
+            ).fetchone()
+            newest_record = newest_result[0] if newest_result else None
+
+            # Archive table stats (create if missing to avoid error)
+            self._ensure_archive_table(conn)
+            archived_result = conn.execute(
+                "SELECT COUNT(*) FROM audit_logs_archive"
+            ).fetchone()
+            archived_records = archived_result[0] if archived_result else 0
+
+            # Ước tính kích thước DB (page_count * page_size)
+            page_count = conn.execute("PRAGMA page_count").fetchone()[0]
+            page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+            size_estimate_bytes = page_count * page_size
+
+        return {
+            "total_records": total_records,
+            "oldest_record": oldest_record,
+            "newest_record": newest_record,
+            "archived_records": archived_records,
+            "size_estimate_bytes": size_estimate_bytes,
+        }
     
     def export_to_json(
         self,

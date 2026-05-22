@@ -48,6 +48,10 @@
       console.error = (...a) => { if (typeof a[0]==='string' && a[0].includes('defaultProps')) return; _err(...a); };
     })();
 
+    /* ─── Auth token (injected via URL ?token= by WebDashboardManager) ─── */
+    const _API_TOKEN = new URLSearchParams(location.search).get('token') || '';
+    const _authHeaders = () => _API_TOKEN ? { 'Authorization': 'Bearer ' + _API_TOKEN } : {};
+
     const { useState, useEffect, useCallback } = React;
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
             PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer } = Recharts;
@@ -647,7 +651,7 @@
 
       /* ── Fetch meta on mount ── */
       useEffect(() => {
-        fetch('/api/meta')
+        fetch('/api/meta', { headers: _authHeaders() })
           .then(r => r.json())
           .then(m => {
             setMeta(m);
@@ -663,7 +667,7 @@
         if (!df || !dt) return;
         setLoading(true);
         const params = new URLSearchParams({ start:parseVi(df), end:parseVi(dt), owner });
-        fetch(`/api/data?${params}`)
+        fetch(`/api/data?${params}`, { headers: _authHeaders() })
           .then(r => r.json())
           .then(d => { setApiData(d); setLoading(false); })
           .catch(e => { console.error(e); setLoading(false); });

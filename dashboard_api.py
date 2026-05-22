@@ -3,23 +3,60 @@ Vehicle Management Dashboard — Flask API Server
 ================================================
 Replaces Streamlit with a direct HTML/React UI served by Flask.
 Run:  python dashboard_api.py
-Open: http://localhost:8502
+Open: http://localhost:8502?token=<SESSION_TOKEN>
 """
 
 import os
+import secrets
 import sqlite3
 from datetime import datetime, timedelta
+from functools import wraps
 
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
 # ─── config ─────────────────────────────────────────────────────────────────
-APP_VERSION = os.environ.get("VEHICLE_APP_VERSION", "V1.0 @2026")
-DB_FILE     = os.environ.get("VEHICLE_APP_DB_PATH", "vehicle_management_v1.0.db")
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-PORT        = int(os.environ.get("VEHICLE_DASH_PORT", "8502"))
+APP_VERSION   = os.environ.get("VEHICLE_APP_VERSION", "V1.0 @2026")
+DB_FILE       = os.environ.get("VEHICLE_APP_DB_PATH", "vehicle_management_v1.0.db")
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+PORT          = int(os.environ.get("VEHICLE_DASH_PORT", "8502"))
+
+# Session token: injected by WebDashboardManager via env var; new token each run.
+SESSION_TOKEN = os.environ.get("VEHICLE_DASH_TOKEN", "")
 
 app = Flask(__name__, static_url_path="")
+
+
+# ─── auth helpers ─────────────────────────────────────────────────────────────
+
+def _require_token(f):
+    """Decorator: enforce Bearer token on API endpoints."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not SESSION_TOKEN:
+            # Token not configured — allow (standalone / dev mode)
+            return f(*args, **kwargs)
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Unauthorized"}), 401
+        token = auth_header[len("Bearer "):]
+        if not secrets.compare_digest(token, SESSION_TOKEN):
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.after_request
+def _add_cors_headers(response):
+    """Restrict CORS to localhost only."""
+    origin = request.headers.get("Origin", "")
+    if origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1"):
+        response.headers["Access-Control-Allow-Origin"] = origin
+    else:
+        response.headers["Access-Control-Allow-Origin"] = "null"
+    response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    return response
 
 # ─── db helpers ─────────────────────────────────────────────────────────────
 def _db_path():
@@ -72,6 +109,7 @@ def assets(filename):
 
 # ─── /api/meta ───────────────────────────────────────────────────────────────
 @app.route("/api/meta")
+@_require_token
 def api_meta():
     df_range = _q("""
         SELECT
@@ -101,6 +139,7 @@ def api_meta():
 
 # ─── /api/data ───────────────────────────────────────────────────────────────
 @app.route("/api/data")
+@_require_token
 def api_data():
     start     = _normalise_date(request.args.get("start", ""))
     end       = _normalise_date(request.args.get("end",   ""))
