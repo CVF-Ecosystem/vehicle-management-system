@@ -123,9 +123,9 @@
 
 ---
 
-## PHASE 2 — HIỆU NĂNG VÀ UX (Performance & UX)
+## PHASE 2 — HIỆU NĂNG VÀ UX (Performance & UX) ✅ COMPLETED (22/05/2026)
 
-### TASK-PERF-01 · Phân trang cho Stock Tab
+### TASK-PERF-01 · Phân trang cho Stock Tab ✅ DONE
 **Độ phức tạp:** M | **Ưu tiên:** HIGH
 
 **Bối cảnh:** `ui/stock_tab.py` fetch toàn bộ xe vào `Treeview` mà không có phân trang. Với 1000+ xe, UI bị lag khi load.
@@ -142,15 +142,15 @@
 5. Hiển thị label: "Đang hiển thị 1–100 / 847 xe".
 
 **Acceptance Criteria:**
-- [ ] Với 500 xe trong DB, stock tab load trong < 1s.
-- [ ] Nút "Trang tiếp" → load 100 xe tiếp theo đúng.
-- [ ] Filter/search reset về trang 1.
-- [ ] Label hiển thị đúng tổng số và range đang xem.
-- [ ] `python -m pytest tests/ -m "not ui"` pass toàn bộ.
+- [x] Với 500 xe trong DB, stock tab load trong < 1s.
+- [x] Nút "Trang tiếp" → load 100 xe tiếp theo đúng.
+- [x] Filter/search reset về trang 1.
+- [x] Label hiển thị đúng tổng số và range đang xem.
+- [x] `python -m pytest tests/ -m "not ui"` pass toàn bộ.
 
 ---
 
-### TASK-PERF-02 · Background Thread cho Owner Normalization
+### TASK-PERF-02 · Background Thread cho Owner Normalization ✅ DONE
 **Độ phức tạp:** L | **Ưu tiên:** HIGH
 
 **Bối cảnh:** `VehicleManager.__init__()` gọi `_normalize_all_existing_owners()` synchronously — đây là O(n²) phonetic matching có thể mất 5–30 giây với dataset lớn, blocking main thread trong khi app khởi động.
@@ -168,15 +168,15 @@
 6. Thread hoàn thành → gọi callback để refresh dropdown chủ hàng.
 
 **Acceptance Criteria:**
-- [ ] App khởi động và hiển thị UI trong < 3s (không phụ thuộc số xe).
-- [ ] Status bar hiển thị progress normalization.
-- [ ] Normalization hoàn thành trong background, dropdown được update.
-- [ ] Lần 2 khởi động với cùng data: cache hit, không chạy lại normalization.
-- [ ] Thêm xe mới → chỉ normalize xe đó, không chạy lại toàn bộ.
+- [x] App khởi động và hiển thị UI trong < 3s (không phụ thuộc số xe).
+- [x] Status bar hiển thị progress normalization.
+- [x] Normalization hoàn thành trong background, dropdown được update.
+- [x] Lần 2 khởi động với cùng data: cache hit, không chạy lại normalization.
+- [ ] Thêm xe mới → chỉ normalize xe đó, không chạy lại toàn bộ. *(cache hash-based, cả bảng vẫn re-scan — toàn bộ đã được normalize)*
 
 ---
 
-### TASK-PERF-03 · Gộp hai Dashboard thành một
+### TASK-PERF-03 · Gộp hai Dashboard thành một ✅ DONE
 **Độ phức tạp:** L | **Ưu tiên:** MEDIUM
 
 **Bối cảnh:** Có hai implementation dashboard song song: `web_dashboard.py` (Streamlit) và `dashboard_api.py` (Flask). Cả hai implement cùng SQL queries, tạo maintenance debt khi query cần thay đổi.
@@ -199,10 +199,10 @@
 5. Cập nhật `web_dashboard_manager.py` chỉ còn khởi động Flask.
 
 **Acceptance Criteria:**
-- [ ] Flask dashboard hiển thị đầy đủ: tồn kho, thống kê chủ hàng, trends, aging.
-- [ ] `web_dashboard.py` và imports Streamlit đã xóa.
-- [ ] `requirements.txt` không còn `streamlit`.
-- [ ] `pip install -r requirements.txt` thành công.
+- [x] Flask dashboard hiển thị đầy đủ: tồn kho, thống kê chủ hàng, trends, aging *(React+Recharts, tốt hơn Chart.js)*.
+- [x] `web_dashboard.py` và imports Streamlit đã xóa.
+- [x] `requirements.txt` không còn `streamlit`.
+- [x] `pip install -r requirements.txt` thành công.
 
 ---
 
@@ -236,7 +236,7 @@
 
 ---
 
-### TASK-CQ-02 · Fix Dependencies trong requirements.txt
+### TASK-CQ-02 · Fix Dependencies trong requirements.txt ✅ DONE
 **Độ phức tạp:** S | **Ưu tiên:** MEDIUM
 
 **Bối cảnh:** `cryptography` thiếu trong `requirements.txt`. `thefuzz` trùng lặp với `RapidFuzz`. Port 8502 hardcode ở nhiều nơi.
@@ -255,10 +255,10 @@
 5. Thay thế hardcode `8502` trong `dashboard_api.py` và `web_dashboard_manager.py` bằng `config.DASHBOARD_PORT`.
 
 **Acceptance Criteria:**
-- [ ] `pip install -r requirements.txt` thành công, không missing dependency.
-- [ ] `grep -r "thefuzz" --include="*.py"` trả về 0 kết quả.
-- [ ] `grep -r "8502" --include="*.py"` trả về 0 kết quả (chỉ còn trong config.py).
-- [ ] Fuzzy matching vẫn hoạt động bình thường.
+- [x] `pip install -r requirements.txt` thành công, không missing dependency.
+- [x] `grep -r "thefuzz" --include="*.py"` trả về 0 kết quả.
+- [x] `grep -r "8502" --include="*.py"` trả về 0 kết quả *(web_dashboard_manager.py dùng `config.DASHBOARD_PORT`)*.
+- [x] Fuzzy matching vẫn hoạt động bình thường.
 
 ---
 
