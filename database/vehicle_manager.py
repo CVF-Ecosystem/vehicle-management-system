@@ -1,13 +1,16 @@
 # database/vehicle_manager.py
 import sqlite3
 import logging
+import json
+import hashlib
+import threading
 from datetime import datetime, timezone, timedelta
 import os
 
 logger = logging.getLogger(__name__)
 from .base_manager import BaseManager
 from .location_manager import LocationManager
-from config import DB_FILE, ARCHIVES_DIR, STATUS_IN_STOCK, STATUS_SHIPPED
+from config import DB_FILE, ARCHIVES_DIR, STATUS_IN_STOCK, STATUS_SHIPPED, get_data_path
 from data_normalizer import validate_vin, normalize_vin, normalize_owner, normalize_vehicle_type
 from exceptions import ValidationError, VINValidationError, DateValidationError, RequiredFieldError
 from database.audit_repository import log_create, log_update, log_delete, log_audit, AuditAction
@@ -33,10 +36,9 @@ class VehicleManager(BaseManager):
     def __init__(self):
         super().__init__()
         self.location_manager = LocationManager()
-        # Bước 1: Chuẩn hóa toàn bộ tên chủ hàng cũ trong DB (chạy 1 lần khi khởi động)
-        self._normalize_all_existing_owners()
-        # Bước 2: Nạp danh sách chủ hàng (đã chuẩn) vào normalizer
+        # Nạp danh sách chủ hàng vào normalizer ngay (chỉ đọc, nhanh)
         self._refresh_known_owners()
+        # Normalization nặng được chạy qua start_background_normalization()
 
     def _refresh_known_owners(self):
         """Cập nhật danh sách chủ hàng trong normalizer từ DB hiện tại."""
@@ -155,6 +157,90 @@ class VehicleManager(BaseManager):
 
         except Exception as e:
             logger.warning(f"Owner normalization bị bỏ qua (non-critical): {e}")
+
+    # ── Owner normalization cache helpers ────────────────────────────────────
+
+    def _get_owner_hash(self, owner_counts: list) -> str:
+        """MD5 hash của danh sách (owner, count) — dùng để phát hiện thay đổi."""
+        serialized = json.dumps(sorted(owner_counts), ensure_ascii=False)
+        return hashlib.md5(serialized.encode()).hexdigest()
+
+    def _load_owner_cache(self) -> str | None:
+        """Đọc hash đã lưu từ cache file. Trả về None nếu chưa có."""
+        cache_path = get_data_path("config/owner_normalization_cache.json")
+        if not os.path.exists(cache_path):
+            return None
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                return json.load(f).get("owner_hash")
+        except Exception as e:
+            logger.warning(f"Không đọc được owner cache: {e}")
+            return None
+
+    def _save_owner_cache(self, owner_hash: str) -> None:
+        """Lưu hash vào cache file."""
+        cache_path = get_data_path("config/owner_normalization_cache.json")
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump({"owner_hash": owner_hash}, f)
+        except Exception as e:
+            logger.warning(f"Không lưu được owner cache: {e}")
+
+    def start_background_normalization(self, callback=None) -> None:
+        """
+        Chạy _normalize_all_existing_owners() trong background thread.
+        Cache hash danh sách owner — bỏ qua nếu chưa có thay đổi.
+
+        Args:
+            callback: callable(changed: bool) — được gọi sau khi hoàn thành.
+                      Được gọi từ background thread — caller nên dùng after() nếu cần.
+        """
+        def _run():
+            try:
+                cur = self.conn.cursor()
+                cur.execute("""
+                    SELECT owner, COUNT(*) as cnt
+                    FROM vehicles
+                    WHERE owner IS NOT NULL AND owner != ''
+                    GROUP BY owner
+                    ORDER BY cnt DESC
+                """)
+                owner_counts = [(row[0], row[1]) for row in cur.fetchall()]
+
+                current_hash = self._get_owner_hash(owner_counts)
+                cached_hash  = self._load_owner_cache()
+
+                if current_hash == cached_hash:
+                    logger.info("Owner normalization: cache hit — bỏ qua.")
+                    self._refresh_known_owners()
+                    if callback:
+                        callback(changed=False)
+                    return
+
+                # Cache miss → normalize
+                self._normalize_all_existing_owners()
+
+                # Tính lại hash sau normalize
+                cur.execute("""
+                    SELECT owner, COUNT(*) as cnt
+                    FROM vehicles
+                    WHERE owner IS NOT NULL AND owner != ''
+                    GROUP BY owner
+                    ORDER BY cnt DESC
+                """)
+                new_counts = [(row[0], row[1]) for row in cur.fetchall()]
+                self._save_owner_cache(self._get_owner_hash(new_counts))
+
+                self._refresh_known_owners()
+                if callback:
+                    callback(changed=True)
+            except Exception as e:
+                logger.warning(f"start_background_normalization thất bại: {e}")
+                if callback:
+                    callback(changed=False)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _validate_vehicle_data(self, vin: str, owner: str, date_in: datetime = None) -> dict:
         """

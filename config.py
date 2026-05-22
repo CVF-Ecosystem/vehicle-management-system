@@ -97,6 +97,9 @@ AUTOMATION_TASK_TIME = os.getenv("AUTOMATION_TASK_TIME", "02:00")  # Task Schedu
 DEFAULT_EXPORT_FOLDER = os.getenv("DEFAULT_EXPORT_FOLDER", get_data_path("exports"))
 DEFAULT_IMPORT_FOLDER = os.getenv("DEFAULT_IMPORT_FOLDER", get_data_path("imports"))
 
+# --- Web Dashboard ---
+DASHBOARD_PORT: int = 8502
+
 # --- VIN Validation ---
 # True = Bắt buộc VIN đúng 17 ký tự + checksum hợp lệ (theo chuẩn ISO 3779)
 # False = Chấp nhận VIN từ 6-17 ký tự, không kiểm tra checksum (có cảnh báo)

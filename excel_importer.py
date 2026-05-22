@@ -2,7 +2,7 @@
 import pandas as pd
 from datetime import datetime
 import logging
-from thefuzz import fuzz
+from rapidfuzz import fuzz
 import unidecode
 from config import (
     EXPECTED_VIN_COL, EXPECTED_OWNER_COL, EXPECTED_TYPE_COL

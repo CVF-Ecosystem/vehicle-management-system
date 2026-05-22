@@ -126,11 +126,29 @@ class InventoryApp(ctk.CTk):
         # 7.1-ARCH-1: Initialize Web Dashboard Manager
         self._web_dashboard = WebDashboardManager(self)
         
+        # PERF-02: Chuẩn hóa tên chủ hàng trong background (có cache)
+        self.status_var.set("Đang chuẩn hóa dữ liệu chủ hàng...")
+        self.vehicle_manager.start_background_normalization(
+            callback=lambda changed: self.after(0, self._on_normalization_done, changed)
+        )
+        
         # 7.6-DEPLOY-1: Check for updates in background (after 10 seconds)
         self.after(10000, self._check_for_updates)
         
         logging.info(f"Ứng dụng {APP_VERSION} đã khởi động thành công.")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _on_normalization_done(self, changed: bool):
+        """Callback khi owner normalization hoàn thành."""
+        self.status_var.set(self.get_translation("status_ready"))
+        if changed:
+            logging.info("Owner normalization hoàn thành, làm mới dropdown chủ hàng.")
+            if hasattr(self, 'stock_tab'):
+                self.stock_tab.update_owner_filter_options()
+            if hasattr(self, 'inbound_tab'):
+                self.inbound_tab.update_dropdowns()
+            if hasattr(self, 'outbound_tab'):
+                self.outbound_tab.update_dropdowns()
 
     def get_translation(self, key):
         lang = self.current_lang.get()
@@ -748,7 +766,7 @@ class InventoryApp(ctk.CTk):
         OnboardingDialog(self)
     # === END PHASE 3 ===
 
-    # === WEB DASHBOARD (STREAMLIT) — Delegated to WebDashboardManager (7.1-ARCH-1) ===
+    # === WEB DASHBOARD (FLASK) — Delegated to WebDashboardManager (7.1-ARCH-1) ===
     def _launch_web_dashboard(self):
         """Khởi động Web Dashboard — delegate to WebDashboardManager."""
         if hasattr(self, '_web_dashboard'):

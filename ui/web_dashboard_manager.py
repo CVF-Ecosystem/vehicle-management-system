@@ -1,6 +1,6 @@
 # ui/web_dashboard_manager.py
 """
-Web Dashboard Manager — Quản lý Streamlit web dashboard.
+Web Dashboard Manager — Quản lý Flask web dashboard.
 
 Tách từ main.py để giảm kích thước God class InventoryApp (7.1-ARCH-1).
 """
@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 
 class WebDashboardManager:
     """
-    Quản lý vòng đời của Streamlit web dashboard.
+    Quản lý vòng đời của Flask web dashboard (dashboard_api.py).
     
     Tách biệt logic web dashboard khỏi InventoryApp để:
     - Dễ test độc lập
     - Giảm kích thước main.py
-    - Dễ thay thế Streamlit bằng framework khác
+    - Dễ thay thế backend nếu cần
     """
 
     def __init__(self, app_instance):
@@ -39,8 +39,11 @@ class WebDashboardManager:
         """Kiểm tra dashboard có đang chạy không."""
         return self._process is not None and self._process.poll() is None
 
-    def find_free_port(self, start_port: int = 8501, max_attempts: int = 10) -> int | None:
-        """Tìm port trống để chạy Streamlit."""
+    def find_free_port(self, start_port: int = None, max_attempts: int = 10) -> int | None:
+        """Tìm port trống để chạy Flask dashboard."""
+        if start_port is None:
+            import config as _cfg
+            start_port = _cfg.DASHBOARD_PORT
         for port in range(start_port, start_port + max_attempts):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -173,7 +176,7 @@ class WebDashboardManager:
         webbrowser.open(url)
 
     def _on_error(self, error: str):
-        """Callback khi có lỗi khởi động Streamlit."""
+        """Callback khi có lỗi khởi động Flask dashboard."""
         from tkinter import messagebox
         msg = self.app.get_translation("web_dashboard_error").format(error=error)
         self.app.status_var.set(self.app.get_translation("status_ready"))
