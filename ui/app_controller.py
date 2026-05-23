@@ -15,7 +15,7 @@ from tkinter import Menu, filedialog, messagebox
 
 import customtkinter as ctk
 
-from utils import load_config, save_config, setup_logging
+from utils import load_config, save_config
 from database.base_manager import BaseManager
 from database.vehicle_manager import VehicleManager
 from database.entity_manager import EntityManager
@@ -62,7 +62,7 @@ class InventoryApp(ctk.CTk):
 
     def __init__(self) -> None:
         super().__init__()
-        setup_logging()
+        self.withdraw()  # hide immediately so the empty window never shows as "Not Responding"
 
         self.config = load_config()
         self.current_lang = ctk.StringVar(
@@ -104,7 +104,6 @@ class InventoryApp(ctk.CTk):
     # ------------------------------------------------------------------ Auth --
 
     def _show_login_dialog(self) -> None:
-        self.withdraw()
         self.after(100, self._open_login)
 
     def _open_login(self) -> None:
@@ -113,20 +112,28 @@ class InventoryApp(ctk.CTk):
     def _on_login_success(self, user: dict) -> None:
         logging.info(f"Đăng nhập thành công: {user['username']} ({user['role']})")
         self.deiconify()
+        self.update()          # render window frame before blocking tab build
         self._build_ui()
         self._setup_keyboard_shortcuts()
         self._setup_notification_checks()
         self._web_dashboard = WebDashboardManager(self)
 
-        self.status_var.set("Đang chuẩn hóa dữ liệu chủ hàng...")
-        self.vehicle_manager.start_background_normalization(
-            callback=lambda changed: self.after(0, self._on_normalization_done, changed)
-        )
+        # PERF-02: delay 3s để UI tải xong trước khi start background thread
+        self.after(3000, self._start_normalization)
         self.after(10000, self._check_for_updates)
         logging.info(f"Ứng dụng {APP_VERSION} đã khởi động thành công.")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+    def _start_normalization(self) -> None:
+        """Khởi động background normalization sau khi UI đã tải xong."""
+        self.status_var.set("Đang chuẩn hóa dữ liệu chủ hàng...")
+        self.vehicle_manager.start_background_normalization(
+            callback=lambda changed: self.after(0, self._on_normalization_done, changed)
+        )
+
     def _on_normalization_done(self, changed: bool) -> None:
+        # Gọi trên main thread — an toàn để dùng self.conn
+        self.vehicle_manager._refresh_known_owners()
         self.status_var.set(self.get_translation("status_ready"))
         if changed:
             logging.info("Owner normalization hoàn thành, làm mới dropdown chủ hàng.")
@@ -299,13 +306,21 @@ class InventoryApp(ctk.CTk):
         self._build_web_dashboard_button()
 
         self.inbound_tab = InboundTab(self.tab_map["tab_inbound"], self)
+        self.update_idletasks()
         self.dispatch_tab = DispatchTab(self.tab_map["tab_dispatch"], self)
+        self.update_idletasks()
         self.outbound_tab = OutboundTab(self.tab_map["tab_outbound"], self)
+        self.update_idletasks()
         self.stock_tab = StockTab(self.tab_map["tab_stock"], self)
+        self.update_idletasks()
         self.search_tab = SearchTab(self.tab_map["tab_search"], self)
+        self.update_idletasks()
         self.yard_map_tab = YardMapTab(self.tab_map["tab_yard_map"], self)
+        self.update_idletasks()
         self.dashboard_tab = DashboardTab(self.tab_map["tab_dashboard"], self)
+        self.update_idletasks()
         self.log_tab = LogTab(self.tab_map["tab_log"], self)
+        self.update_idletasks()
 
         # Register tabs với TabManager
         self.tab_manager.register_tabs(

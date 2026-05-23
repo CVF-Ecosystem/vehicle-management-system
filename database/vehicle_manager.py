@@ -223,15 +223,15 @@ class VehicleManager(BaseManager):
 
                 if current_hash == cached_hash:
                     logger.info("Owner normalization: cache hit — bỏ qua.")
-                    self._refresh_known_owners()
+                    # KHÔNG dùng self.conn ở đây — gọi _refresh_known_owners từ callback (main thread)
                     if callback:
                         callback(changed=False)
                     return
 
-                # Cache miss → normalize (dùng bg_conn độc lập)
+                # Cache miss → normalize (chỉ dùng bg_conn)
                 self._normalize_all_existing_owners(_conn=bg_conn)
 
-                # Tính lại hash sau normalize
+                # Tính lại hash sau normalize (vẫn dùng bg_conn)
                 cur.execute("""
                     SELECT owner, COUNT(*) as cnt
                     FROM vehicles
@@ -242,7 +242,7 @@ class VehicleManager(BaseManager):
                 new_counts = [(row[0], row[1]) for row in cur.fetchall()]
                 self._save_owner_cache(self._get_owner_hash(new_counts))
 
-                self._refresh_known_owners()
+                # KHÔNG gọi self._refresh_known_owners() ở đây
                 if callback:
                     callback(changed=True)
             except Exception as e:
