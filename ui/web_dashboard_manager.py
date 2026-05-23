@@ -34,8 +34,25 @@ class WebDashboardManager:
         self.app = app_instance
         self._process = None
         self._port = None
-        # New session token each time the manager is created (i.e. each app launch)
-        self._session_token: str = secrets.token_urlsafe(32)
+        self._session_token: str = self._load_or_create_token()
+
+    def _load_or_create_token(self) -> str:
+        """Load token từ file nếu có — tránh invalidate browser tabs khi restart app."""
+        try:
+            import config as _cfg
+            token_path = _cfg.get_data_path("config/dashboard_token.txt")
+            if os.path.exists(token_path):
+                with open(token_path, "r") as f:
+                    token = f.read().strip()
+                    if len(token) >= 32:
+                        return token
+            token = secrets.token_urlsafe(32)
+            os.makedirs(os.path.dirname(token_path), exist_ok=True)
+            with open(token_path, "w") as f:
+                f.write(token)
+            return token
+        except Exception:
+            return secrets.token_urlsafe(32)
 
     @property
     def is_running(self) -> bool:
