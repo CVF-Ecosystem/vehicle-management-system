@@ -12,13 +12,13 @@ import json
 import base64
 
 from auth.auth_manager import AuthManager
-from config import APP_VERSION, APP_NAME, FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_LARGE
+from config import APP_VERSION, APP_NAME, FONT_FAMILY, FONT_SIZE_NORMAL, FONT_SIZE_LARGE, get_data_path
 from translations import get_translation
 
 logger = logging.getLogger(__name__)
 
-# File lưu credentials (trong thư mục config)
-CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", ".saved_credentials")
+# File lưu credentials — dùng get_data_path để hoạt động đúng cả dev lẫn EXE
+CREDENTIALS_FILE = get_data_path("config/.saved_credentials")
 
 
 class LoginDialog(ctk.CTkToplevel):
@@ -47,8 +47,12 @@ class LoginDialog(ctk.CTkToplevel):
         
         # Make modal
         self.transient(parent)
-        self.grab_set()
-        
+        self.after(50, self.grab_set)   # defer until window is mapped
+
+        # Ensure visible on Windows when parent is withdrawn
+        self.lift()
+        self.focus_force()
+
         # Center on parent
         self.after(10, self._center_on_parent)
     
@@ -246,6 +250,7 @@ class LoginDialog(ctk.CTkToplevel):
                     user_repo.change_password(admin['id'], "admin123")
                     user_repo._reset_failed_attempts(admin['id'])
                     user_repo.update_user(admin['id'], is_active=True)
+                    user_repo.set_must_change_password(admin['id'], True)
                     messagebox.showinfo("Thành công", "Đã mở khóa và reset mật khẩu admin về mặc định (admin123)", parent=unlock_win)
                 else:
                     messagebox.showerror("Lỗi", "Không tìm thấy tài khoản admin", parent=unlock_win)
@@ -362,16 +367,39 @@ class LoginDialog(ctk.CTkToplevel):
                 self._clear_saved_credentials()
             
             logger.info(f"Login successful: {username}")
+
+            # TASK-SEC-01: Force password change if flagged
+            if result.get('must_change_password'):
+                self._clear_saved_credentials()
+                self.withdraw()
+                ForceChangePasswordDialog(
+                    self,
+                    user_id=result['user']['id'],
+                    username=username,
+                    on_done=lambda: self._finish_login(result['user'])
+                )
+                return
             
-            if self.on_success_callback:
-                self.on_success_callback(result['user'])
-            
-            self.destroy()
+            self._finish_login(result['user'])
         else:
             self._show_error(result['message'])
             self.password_entry.delete(0, 'end')
             self.password_entry.focus()
-    
+
+    def _finish_login(self, user):
+        """Gọi callback và đóng dialog sau khi đăng nhập (và đổi mật khẩu nếu cần)."""
+        if self.on_success_callback:
+            self.on_success_callback(user)
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+    def _do_login_fail(self, message: str):
+        self._show_error(message)
+        self.password_entry.delete(0, 'end')
+        self.password_entry.focus()
+
     def _show_error(self, message: str):
         """Hiển thị thông báo lỗi."""
         self.error_label.configure(text=message)
@@ -567,5 +595,123 @@ class ChangePasswordDialog(ctk.CTkToplevel):
         if result['success']:
             messagebox.showinfo(self._t("dialog_info_title"), self._t("change_pwd_success"))
             self.destroy()
+        else:
+            self.error_label.configure(text=result['message'])
+
+
+class ForceChangePasswordDialog(ctk.CTkToplevel):
+    """
+    Dialog bắt buộc đổi mật khẩu (TASK-SEC-01).
+    Không có nút Cancel, không đóng được bằng X hoặc Escape.
+    Validation: tối thiểu 8 ký tự, có chữ hoa + chữ thường + số.
+    """
+
+    def __init__(self, parent, user_id: int, username: str, on_done=None):
+        super().__init__(parent)
+        self.user_id  = user_id
+        self.username = username
+        self.on_done  = on_done
+        self.auth_manager = AuthManager.get_instance()
+
+        self.title("Đổi mật khẩu bắt buộc")
+        self.geometry("420x380")
+        self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", lambda: None)   # disable X button
+        self.bind("<Escape>", lambda e: None)             # disable Escape
+
+        self.transient(parent)
+        self.grab_set()
+        self.lift()
+        self.focus_force()
+        self.after(10, self._center)
+        self._build_ui()
+
+    def _center(self):
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h   = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{(sw-w)//2}+{(sh-h)//2}")
+
+    def _build_ui(self):
+        frame = ctk.CTkFrame(self, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=30, pady=25)
+
+        ctk.CTkLabel(
+            frame,
+            text="🔒 Đổi mật khẩu bắt buộc",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_LARGE, weight="bold")
+        ).pack(pady=(0, 5))
+
+        ctk.CTkLabel(
+            frame,
+            text=f"Tài khoản '{self.username}' đang dùng mật khẩu mặc định.\nVui lòng đặt mật khẩu mới trước khi tiếp tục.",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            text_color="gray",
+            wraplength=360,
+            justify="center"
+        ).pack(pady=(0, 20))
+
+        for label, attr in [
+            ("Mật khẩu mới:", "new_entry"),
+            ("Nhập lại mật khẩu:", "confirm_entry"),
+        ]:
+            ctk.CTkLabel(frame, text=label,
+                         font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL)
+                         ).pack(anchor="w", pady=(0, 4))
+            entry = ctk.CTkEntry(frame, height=36, show="●")
+            entry.pack(fill="x", pady=(0, 12))
+            setattr(self, attr, entry)
+
+        self.hint_label = ctk.CTkLabel(
+            frame,
+            text="Tối thiểu 8 ký tự, gồm chữ HOA, thường và số.",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color="gray"
+        )
+        self.hint_label.pack(pady=(0, 4))
+
+        self.error_label = ctk.CTkLabel(frame, text="", text_color="red",
+                                        font=ctk.CTkFont(family=FONT_FAMILY, size=12))
+        self.error_label.pack(pady=(0, 10))
+
+        ctk.CTkButton(
+            frame,
+            text="💾 Lưu mật khẩu mới",
+            height=40,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=FONT_SIZE_NORMAL, weight="bold"),
+            command=self._save
+        ).pack(fill="x")
+
+        self.new_entry.focus()
+        self.bind("<Return>", lambda e: self._save())
+
+    def _save(self):
+        import re
+        new_pwd     = self.new_entry.get()
+        confirm_pwd = self.confirm_entry.get()
+
+        if len(new_pwd) < 8:
+            self.error_label.configure(text="Mật khẩu phải có ít nhất 8 ký tự.")
+            return
+        if not re.search(r"[A-Z]", new_pwd):
+            self.error_label.configure(text="Mật khẩu phải có ít nhất 1 chữ HOA.")
+            return
+        if not re.search(r"[a-z]", new_pwd):
+            self.error_label.configure(text="Mật khẩu phải có ít nhất 1 chữ thường.")
+            return
+        if not re.search(r"\d", new_pwd):
+            self.error_label.configure(text="Mật khẩu phải có ít nhất 1 chữ số.")
+            return
+        if new_pwd != confirm_pwd:
+            self.error_label.configure(text="Mật khẩu nhập lại không khớp.")
+            return
+
+        result = self.auth_manager.change_password(self.user_id, new_pwd)
+        if result['success']:
+            messagebox.showinfo("Thành công", "Đã đổi mật khẩu thành công!\nVui lòng ghi nhớ mật khẩu mới.", parent=self)
+            self.grab_release()
+            self.destroy()
+            if self.on_done:
+                self.on_done()
         else:
             self.error_label.configure(text=result['message'])

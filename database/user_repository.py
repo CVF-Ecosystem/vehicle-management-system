@@ -132,6 +132,14 @@ class UserRepository:
                 CREATE INDEX IF NOT EXISTS idx_login_history_user_created
                 ON login_history(user_id, created_at)
             """)
+
+            # Migration: add must_change_password column if not exists (TASK-SEC-01)
+            try:
+                self.conn.execute("""
+                    ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0
+                """)
+            except Exception:
+                pass  # Column already exists
     
     def _ensure_default_admin(self):
         """Tạo admin mặc định nếu chưa có user nào."""
@@ -141,13 +149,15 @@ class UserRepository:
         
         if count == 0:
             logger.info("Tạo tài khoản admin mặc định...")
-            self.create_user(
+            result = self.create_user(
                 username='admin',
                 password='admin123',  # Should be changed on first login
                 full_name='Administrator',
                 role=ROLE_ADMIN,
                 created_by_id=None  # System created
             )
+            if result.get('user_id'):
+                self.set_must_change_password(result['user_id'], True)
             logger.info("Đã tạo tài khoản admin mặc định (username: admin, password: admin123)")
     
     # ==================== Password Hashing ====================
@@ -311,7 +321,8 @@ class UserRepository:
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT id, username, password_hash, full_name, role, is_active, 
-                   created_at, last_login, failed_login_attempts, locked_until
+                   created_at, last_login, failed_login_attempts, locked_until,
+                   COALESCE(must_change_password, 0) AS must_change_password
             FROM users WHERE username = ?
         """, (username.strip().lower(),))
         row = cursor.fetchone()
@@ -386,6 +397,19 @@ class UserRepository:
             logger.error(f"Lỗi cập nhật user: {e}")
             return {"success": False, "message": f"Lỗi: {e}"}
     
+    def set_must_change_password(self, user_id: int, value: bool) -> None:
+        """Đặt/xóa flag bắt buộc đổi mật khẩu."""
+        try:
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    "UPDATE users SET must_change_password = ? WHERE id = ?",
+                    (1 if value else 0, user_id)
+                )
+                self.conn.commit()
+        except Exception as e:
+            logger.warning(f"set_must_change_password thất bại: {e}")
+
     def change_password(self, user_id: int, new_password: str) -> Dict[str, Any]:
         """Đổi mật khẩu user."""
         if not new_password or len(new_password) < PASSWORD_MIN_LENGTH:
@@ -397,7 +421,8 @@ class UserRepository:
             with self._write_lock:
                 cursor = self.conn.cursor()
                 cursor.execute("""
-                    UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL
+                    UPDATE users SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL,
+                                    must_change_password = 0
                     WHERE id = ?
                 """, (password_hash, user_id))
                 self.conn.commit()
@@ -521,8 +546,14 @@ class UserRepository:
             'role': user['role']
         }
         
+        must_change = bool(user.get('must_change_password', 0))
         logger.info(f"User '{username}' đăng nhập thành công")
-        return {"success": True, "message": "Đăng nhập thành công", "user": user_info}
+        return {
+            "success": True,
+            "message": "Đăng nhập thành công",
+            "user": user_info,
+            "must_change_password": must_change
+        }
     
     def _increment_failed_attempts(self, user_id: int):
         """Tăng số lần đăng nhập thất bại."""
