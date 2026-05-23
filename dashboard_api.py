@@ -168,7 +168,7 @@ def api_data():
               OR (date_out IS NOT NULL AND DATE(date_out) BETWEEN DATE(?) AND DATE(?))
               OR status = 'IN_STOCK'
           )
-    """, (owner_sel, owner_sel, start, end, start, end, start, end))
+    """, (start, end, start, end, owner_sel, owner_sel, start, end, start, end))
 
     kpi = {"total": 0, "nhap": 0, "xuat": 0, "ton": 0, "daXuat": 0}
     if not df_kpi.empty:
