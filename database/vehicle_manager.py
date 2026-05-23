@@ -217,7 +217,7 @@ class VehicleManager(BaseManager):
             bg_conn = None
             try:
                 # Mở connection riêng — tránh tranh chấp với self.conn trên main thread
-                bg_conn = _sqlite3.connect(config.DB_FILE, check_same_thread=False)
+                bg_conn = _sqlite3.connect(DB_FILE, check_same_thread=False)
                 bg_conn.row_factory = _sqlite3.Row
 
                 cur = bg_conn.cursor()
