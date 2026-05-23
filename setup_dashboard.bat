@@ -1,60 +1,72 @@
 @echo off
-chcp 65001 >nul
-title Cài đặt Web Dashboard - Quản lý Xe V1.0
+title Setup Web Dashboard
 
 echo ====================================================
-echo   CÀI ĐẶT WEB DASHBOARD - PHẦN MỀM QUẢN LÝ XE
+echo   SETUP WEB DASHBOARD - Vehicle Management V1.0
 echo ====================================================
 echo.
 
-:: ── Kiểm tra Python ──────────────────────────────────
+:: Check Python
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [LOI] Khong tim thay Python tren may tinh nay!
+    echo [ERROR] Python not found on this machine!
     echo.
-    echo  Vui long cai Python tai:
-    echo    https://www.python.org/downloads/
-    echo  (Chon Python 3.11+, tich o "Add Python to PATH")
+    echo Please download Python at:
+    echo   https://www.python.org/downloads/
+    echo Select Python 3.11 or newer.
+    echo Check "Add Python to PATH" during install.
+    echo.
+    echo Then run this file again.
     echo.
     pause
     exit /b 1
 )
 
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do set PY_VER=%%v
-echo [OK] Da tim thay %PY_VER%
+echo [OK] Found %PY_VER%
 echo.
 
-:: ── Cài thư viện ─────────────────────────────────────
-echo [1/3] Cai dat Flask...
+:: Install libraries
+echo [1/3] Installing Flask...
 pip install flask --quiet --disable-pip-version-check
-if %errorlevel% neq 0 ( echo [LOI] Cai flask that bai! & pause & exit /b 1 )
-echo [OK] Flask
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to install flask!
+    pause
+    exit /b 1
+)
+echo [OK] Flask installed
 
-echo [2/3] Cai dat Pandas...
+echo [2/3] Installing Pandas...
 pip install pandas --quiet --disable-pip-version-check
-if %errorlevel% neq 0 ( echo [LOI] Cai pandas that bai! & pause & exit /b 1 )
-echo [OK] Pandas
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to install pandas!
+    pause
+    exit /b 1
+)
+echo [OK] Pandas installed
 
-echo [3/3] Cai dat OpenPyXL...
+echo [3/3] Installing OpenPyXL...
 pip install openpyxl --quiet --disable-pip-version-check
-if %errorlevel% neq 0 ( echo [LOI] Cai openpyxl that bai! & pause & exit /b 1 )
-echo [OK] OpenPyXL
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to install openpyxl!
+    pause
+    exit /b 1
+)
+echo [OK] OpenPyXL installed
 
 echo.
 echo ====================================================
-echo   CAI DAT HOAN THANH!
-echo   Ban co the dung Web Dashboard binh thuong roi.
+echo   SETUP COMPLETE! Web Dashboard is ready to use.
 echo ====================================================
 echo.
 
-:: ── Hỏi có muốn mở app ngay không ───────────────────
-set /p OPEN="Mo phan mem ngay bay gio? (Y/N): "
+set /p OPEN="Open VehicleManagement now? (Y/N): "
 if /i "%OPEN%"=="Y" (
     if exist "VehicleManagement.exe" (
-        echo Dang mo VehicleManagement.exe...
+        echo Starting VehicleManagement.exe...
         start "" "VehicleManagement.exe"
     ) else (
-        echo [CANH BAO] Khong tim thay VehicleManagement.exe trong thu muc nay.
+        echo [WARNING] VehicleManagement.exe not found in this folder.
     )
 )
 
