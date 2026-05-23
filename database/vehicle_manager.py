@@ -105,30 +105,42 @@ class VehicleManager(BaseManager):
                 if sanitized != owner:
                     sanitized_map[owner] = sanitized
 
-            # Bước 2: Nhóm theo phonetic key → tìm canonical
-            # Dùng sanitized nếu có, không thì dùng nguyên
+            # Bước 2: Tra cứu owner_map.json (explicit mappings từ file cấu hình)
+            # Đây là bước quan trọng để áp dụng corrections khi DB cũ được đưa vào
+            owner_map_mapped = {}  # original → mapped (từ owner_map.json)
+            if _normalizer.owner_map_valid:
+                for owner, _ in owner_counts:
+                    effective = sanitized_map.get(owner, owner)
+                    mapped = _normalizer.normalize_owner(effective)
+                    if mapped != effective:
+                        owner_map_mapped[owner] = mapped
+
+            # Bước 3: Nhóm theo phonetic key → tìm canonical (chỉ với các owner chưa được map)
             phonetic_groups = defaultdict(list)  # key → [(effective_owner, diacritics, count)]
             for owner, count in owner_counts:
+                if owner in owner_map_mapped:
+                    continue  # đã có mapping rõ ràng, bỏ qua phonetic
                 effective = sanitized_map.get(owner, owner)
                 key = _phonetic_key(effective)
                 phonetic_groups[key].append((effective, _count_diacritics(effective), count))
 
-            # Bước 3: Chọn canonical cho mỗi nhóm (nhiều dấu nhất → nhiều bản ghi nhất)
-            canonical_map = {}  # original_owner → canonical_owner
+            # Bước 4: Chọn canonical cho mỗi nhóm (nhiều dấu nhất → nhiều bản ghi nhất)
+            canonical_map = {}  # effective_owner → canonical_owner
             for key, members in phonetic_groups.items():
-                # Sắp xếp: diacritics DESC, count DESC
                 members.sort(key=lambda x: (x[1], x[2]), reverse=True)
                 canonical = members[0][0]
-
                 for effective, _, _ in members:
                     if effective != canonical:
                         canonical_map[effective] = canonical
 
-            # Kết hợp: sanitized_map + canonical_map → update_map (original → final)
+            # Kết hợp tất cả: owner_map_mapped > canonical_map > sanitized_map
             update_map = {}
             for owner, _ in owner_counts:
-                sanitized = sanitized_map.get(owner, owner)
-                final = canonical_map.get(sanitized, sanitized)
+                if owner in owner_map_mapped:
+                    final = owner_map_mapped[owner]
+                else:
+                    sanitized = sanitized_map.get(owner, owner)
+                    final = canonical_map.get(sanitized, sanitized)
                 if final != owner:
                     update_map[owner] = final
 
@@ -136,7 +148,7 @@ class VehicleManager(BaseManager):
                 logger.info("Owner normalization: không có gì cần cập nhật.")
                 return
 
-            # Bước 4: Áp dụng UPDATE vào DB
+            # Bước 5: Áp dụng UPDATE vào DB
             _c.execute("BEGIN TRANSACTION")
             try:
                 total_updated = 0

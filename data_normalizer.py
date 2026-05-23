@@ -348,6 +348,7 @@ class DataNormalizer:
         - Xóa khoảng trắng đầu/cuối
         - Thu gọn nhiều khoảng trắng liên tiếp thành 1
         - Chuẩn hóa dấu '/': xóa space xung quanh  ("A / B" → "A/B")
+        - Sort các phần cách nhau bởi '/' theo alphabet ("B/A" → "A/B")
         - Chuyển thành UPPERCASE
         """
         if not text:
