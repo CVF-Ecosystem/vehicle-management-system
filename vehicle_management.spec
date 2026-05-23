@@ -6,33 +6,73 @@ import os
 
 block_cipher = None
 
+# Chỉ bundle file tĩnh (ảnh, font) vào _MEIPASS — KHÔNG đưa .py vào datas
+_datas = [
+    ('assets', 'assets'),   # Logo.jpg, Arial fonts
+]
+if os.path.isdir('icons') and os.listdir('icons'):
+    _datas.append(('icons', 'icons'))
+
 a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[
-        ('assets',          'assets'),
-        ('icons',           'icons'),
-        ('config',          'config'),
-        ('translations.py', '.'),
-        ('config.py',       '.'),
-        ('utils.py',        '.'),
-        ('data_normalizer.py', '.'),
-    ],
+    datas=_datas,
     hiddenimports=[
+        # CustomTkinter + PIL
         'customtkinter',
         'PIL._tkinter_finder',
+        'PIL.Image',
+        'PIL.ImageTk',
+        # Tkinter internals
+        'tkinter.ttk',
+        'tkinter.messagebox',
+        'tkinter.filedialog',
+        'tkinter.simpledialog',
+        'tkcalendar',
+        # Auth / crypto
         'cryptography',
-        'rapidfuzz',
-        'unidecode',
-        'openpyxl',
+        'cryptography.hazmat.primitives.kdf.pbkdf2',
+        'cryptography.hazmat.backends.openssl',
+        # Text / locale
         'babel',
+        'babel.numbers',
+        'babel.dates',
         'dateutil',
+        'dateutil.parser',
+        # Fuzzy / normalizer
+        'rapidfuzz',
+        'rapidfuzz.fuzz',
+        'unidecode',
+        # Data / Excel / Word / PDF
+        'pandas',
+        'numpy',
+        'openpyxl',
+        'openpyxl.styles',
+        'openpyxl.utils',
+        'docx',
+        'docxtpl',
+        'reportlab',
+        'reportlab.lib.pagesizes',
+        'reportlab.platypus',
+        'reportlab.pdfbase.ttfonts',
+        # Charts (pdf_generator dùng matplotlib + seaborn)
+        'matplotlib',
+        'matplotlib.pyplot',
+        'matplotlib.backends.backend_agg',
+        'seaborn',
+        # QR code
+        'qrcode',
+        'qrcode.image.pil',
+        # Misc
+        'requests',
+        'packaging',
+        'packaging.version',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['streamlit', 'flask', 'pandas', 'numpy'],
+    excludes=['streamlit'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
