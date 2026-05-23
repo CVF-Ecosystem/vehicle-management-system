@@ -129,7 +129,7 @@
                 onError={e => { e.target.style.display='none'; e.target.parentElement.innerHTML='<span style="font-size:20px">🚗</span>'; }} />
             </div>
             <div>
-              <div style={{ color:'white', fontWeight:700, fontSize:13.5, lineHeight:1.2 }}>Vehicle Management</div>
+              <div style={{ color:'white', fontWeight:700, fontSize:13.5, lineHeight:1.2 }}>TIEN-TAN THUAN PORT</div>
               <div style={{ color:'rgba(255,255,255,0.38)', fontSize:10, letterSpacing:'0.07em', marginTop:2 }}>SAIGON PORT · SINCE 1863</div>
             </div>
           </div>
@@ -148,7 +148,7 @@
             </div>
 
             {divider}
-            {sl('📅','bãiảng thời gian')}
+            {sl('📅','thời gian')}
             <div style={{ display:'flex', flexDirection:'column', gap:7, marginBottom:16 }}>
               <div>
                 <div style={{ color:'rgba(255,255,255,0.35)', fontSize:11, marginBottom:3 }}>Từ ngày</div>
@@ -314,7 +314,7 @@
         <div style={{ ...card, padding:'20px 22px', height:'100%', display:'flex', flexDirection:'column' }}>
           <div style={{ marginBottom:10 }}>
             <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>🥧 Tỷ lệ tồn bãi</div>
-            <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Phân bố xe đang trong bãi</div>
+            <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Xe đang trong bãi</div>
           </div>
           <div style={{ position:'relative', flexShrink:0 }}>
             <ResponsiveContainer width="100%" height={200}>
@@ -359,7 +359,7 @@
       return (
         <div style={{ ...card, padding:'20px 22px', marginTop:14 }}>
           <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>📈 Biến động nhập / xuất hàng ngày</div>
+            <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>📈 Biến động hàng ngày</div>
             <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Thống kê theo ngày đã chọn</div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
@@ -720,7 +720,7 @@
             <div style={{ background:'white', borderBottom:'1px solid #e2e8f0', padding:'13px 26px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
               <div>
                 <h1 style={{ fontSize:19, fontWeight:800, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>Vehicle Management Dashboard</h1>
-                <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Ứng dụng quản lý phương tiện · Cảng Tân Thuận </div>
+                <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>Ứng dụng quản lý xe Ô tô · Cảng Tân Thuận </div>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:6, background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:8, padding:'7px 13px', fontSize:12.5, color:'#0369a1', fontWeight:600 }}>
@@ -786,7 +786,7 @@
 
               {tab==='yardmap' && (
                 <div className="chart-enter" style={{ paddingTop:16 }}>
-                  <SectionHeader icon="🗺️" title="Bản đồ bãi xe" sub="Tình trạng chiếm dụng và tỷ lệ lấp đầy từng khu vực" />
+                  <SectionHeader icon="🗺️" title="Bản đồ bãi xe" sub="Tỷ lệ lấp đầy từng khu vực" />
                   <YardMap yard={yard} />
                 </div>
               )}

@@ -162,12 +162,13 @@ def api_data():
                       AND DATE(date_out) BETWEEN DATE(?) AND DATE(?) THEN 1 ELSE 0 END) AS total_out
         FROM vehicles
         WHERE is_active = 1
+          AND (? = 'Tất cả' OR owner = ?)
           AND (
               DATE(date_in) BETWEEN DATE(?) AND DATE(?)
               OR (date_out IS NOT NULL AND DATE(date_out) BETWEEN DATE(?) AND DATE(?))
               OR status = 'IN_STOCK'
           )
-    """, (start, end, start, end, start, end, start, end))
+    """, (owner_sel, owner_sel, start, end, start, end, start, end))
 
     kpi = {"total": 0, "nhap": 0, "xuat": 0, "ton": 0, "daXuat": 0}
     if not df_kpi.empty:
@@ -230,15 +231,17 @@ def api_data():
         SELECT DATE(date_in) AS dt, 'n' AS tp, COUNT(*) AS cnt
         FROM vehicles
         WHERE is_active=1 AND DATE(date_in) BETWEEN DATE(?) AND DATE(?)
+          AND (? = 'Tất cả' OR owner = ?)
         GROUP BY DATE(date_in)
         UNION ALL
         SELECT DATE(date_out), 'x', COUNT(*)
         FROM vehicles
         WHERE is_active=1 AND date_out IS NOT NULL
           AND DATE(date_out) BETWEEN DATE(?) AND DATE(?)
+          AND (? = 'Tất cả' OR owner = ?)
         GROUP BY DATE(date_out)
         ORDER BY dt
-    """, (start, end, start, end))
+    """, (start, end, owner_sel, owner_sel, start, end, owner_sel, owner_sel))
 
     daily = []
     if not df_daily.empty:
