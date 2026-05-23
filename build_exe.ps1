@@ -79,6 +79,12 @@ if (Test-Path "assets") {
     Write-Host "      [OK] assets/"
 }
 
+# Copy batch setup
+if (Test-Path "setup_dashboard.bat") {
+    Copy-Item "setup_dashboard.bat" "$pkgDir\setup_dashboard.bat"
+    Write-Host "      [OK] setup_dashboard.bat"
+}
+
 # Copy hướng dẫn sử dụng
 if (Test-Path "HUONG_DAN_DASHBOARD.txt") {
     Copy-Item "HUONG_DAN_DASHBOARD.txt" "$pkgDir\HUONG_DAN_DASHBOARD.txt"
