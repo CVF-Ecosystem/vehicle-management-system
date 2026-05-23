@@ -694,11 +694,47 @@ class InventoryApp(ctk.CTk):
 
     # ------------------------------------------------------- Lifecycle ------
 
+    def _sync_owner_map(self) -> None:
+        """Cập nhật owner_map.json với các tên chủ hàng canonical hiện tại trong DB."""
+        try:
+            import json, re, unidecode as _ud
+            from config import OWNER_MAP_FILE
+
+            owners = self.vehicle_manager._known_owners
+            if not owners:
+                return
+
+            map_path = OWNER_MAP_FILE
+            try:
+                with open(map_path, 'r', encoding='utf-8') as f:
+                    owner_map = json.load(f)
+            except Exception:
+                owner_map = {"_comment": "Owner name normalization map"}
+
+            added = 0
+            for canonical in owners:
+                lower = canonical.lower()
+                ascii_ver = _ud.unidecode(lower)
+                for variant in (lower, ascii_ver,
+                                lower.replace(' ', ''), ascii_ver.replace(' ', '')):
+                    if variant and variant not in owner_map:
+                        owner_map[variant] = canonical
+                        added += 1
+
+            if added > 0:
+                os.makedirs(os.path.dirname(map_path), exist_ok=True)
+                with open(map_path, 'w', encoding='utf-8') as f:
+                    json.dump(owner_map, f, ensure_ascii=False, indent=4)
+                logging.info(f"owner_map.json: thêm {added} variants mới khi đóng app.")
+        except Exception as e:
+            logging.warning(f"_sync_owner_map thất bại (non-critical): {e}")
+
     def on_close(self) -> None:
         if messagebox.askokcancel(
             self.get_translation("confirm_exit_title"),
             self.get_translation("confirm_exit_msg"),
         ):
+            self._sync_owner_map()
             if hasattr(self, "_web_dashboard") and self._web_dashboard.is_running:
                 self._web_dashboard.stop()
             save_config(self.config)
