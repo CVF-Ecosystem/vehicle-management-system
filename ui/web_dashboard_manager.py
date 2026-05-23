@@ -86,10 +86,20 @@ class WebDashboardManager:
 
             # Giải quyết đường dẫn dashboard_api.py trong môi trường PyInstaller
             if hasattr(sys, '_MEIPASS'):
+                # Chạy dưới dạng EXE — dashboard_api.py nằm cạnh file EXE
                 base_dir = os.path.dirname(sys.executable)
+                # sys.executable là file .exe, KHÔNG phải python.exe → tìm Python hệ thống
+                import shutil
+                python_exe = (
+                    shutil.which("python")
+                    or shutil.which("python3")
+                    or shutil.which("py")
+                    or "python"
+                )
             else:
                 script_dir = os.path.dirname(os.path.abspath(__file__))
                 base_dir = os.path.dirname(script_dir)
+                python_exe = sys.executable
 
             dashboard_path = os.path.join(base_dir, "dashboard_api.py")
 
@@ -100,7 +110,7 @@ class WebDashboardManager:
                 )
                 return
 
-            cmd = [sys.executable, dashboard_path]
+            cmd = [python_exe, dashboard_path]
 
             startupinfo = None
             creationflags = 0

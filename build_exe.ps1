@@ -57,12 +57,26 @@ New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
 Copy-Item "dist\VehicleManagement.exe" "$pkgDir\VehicleManagement.exe"
 Write-Host "      [OK] VehicleManagement.exe"
 
-# Copy web_dashboard.py (PHẢI đặt cùng thư mục với EXE)
-if (Test-Path "web_dashboard.py") {
-    Copy-Item "web_dashboard.py" "$pkgDir\web_dashboard.py"
-    Write-Host "      [OK] web_dashboard.py"
+# Copy dashboard_api.py (Flask server — PHẢI đặt cùng thư mục với EXE)
+if (Test-Path "dashboard_api.py") {
+    Copy-Item "dashboard_api.py" "$pkgDir\dashboard_api.py"
+    Write-Host "      [OK] dashboard_api.py"
 } else {
-    Write-Host "      [CANH BAO] Khong tim thay web_dashboard.py!" -ForegroundColor Yellow
+    Write-Host "      [CANH BAO] Khong tim thay dashboard_api.py!" -ForegroundColor Yellow
+}
+
+# Copy dashboard.html (giao diện React)
+if (Test-Path "dashboard.html") {
+    Copy-Item "dashboard.html" "$pkgDir\dashboard.html"
+    Write-Host "      [OK] dashboard.html"
+} else {
+    Write-Host "      [CANH BAO] Khong tim thay dashboard.html!" -ForegroundColor Yellow
+}
+
+# Copy thư mục assets (logo, fonts)
+if (Test-Path "assets") {
+    Copy-Item -Recurse "assets" "$pkgDir\assets"
+    Write-Host "      [OK] assets/"
 }
 
 # Copy hướng dẫn sử dụng
