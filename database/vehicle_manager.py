@@ -58,7 +58,7 @@ class VehicleManager(BaseManager):
         except Exception as e:
             logger.warning(f"Không thể nạp danh sách chủ hàng cho normalizer: {e}")
 
-    def _normalize_all_existing_owners(self):
+    def _normalize_all_existing_owners(self, _conn=None):
         """
         Chuẩn hóa TẤT CẢ tên chủ hàng đang có trong DB khi app khởi động.
         Xử lý:
@@ -75,7 +75,8 @@ class VehicleManager(BaseManager):
             from data_normalizer import normalizer as _normalizer
             from collections import defaultdict
 
-            cur = self.conn.cursor()
+            _c = _conn or self.conn
+            cur = _c.cursor()
             # Lấy tất cả owner + số bản ghi (kể cả is_active=0 để chuẩn hóa toàn bộ)
             cur.execute("""
                 SELECT owner, COUNT(*) as cnt
@@ -136,7 +137,7 @@ class VehicleManager(BaseManager):
                 return
 
             # Bước 4: Áp dụng UPDATE vào DB
-            self.begin_transaction()
+            _c.execute("BEGIN TRANSACTION")
             try:
                 total_updated = 0
                 for old_owner, new_owner in update_map.items():
@@ -149,13 +150,13 @@ class VehicleManager(BaseManager):
                     logger.info(
                         f"  Owner normalized: '{old_owner}' → '{new_owner}' ({rows} bản ghi)"
                     )
-                self.commit_transaction()
+                _c.commit()
                 logger.info(
                     f"Owner normalization hoàn tất: "
                     f"{len(update_map)} biến thể → {total_updated} bản ghi đã cập nhật."
                 )
             except Exception as e:
-                self.rollback_transaction()
+                _c.rollback()
                 logger.error(f"Lỗi khi cập nhật owner normalization: {e}")
 
         except Exception as e:
@@ -200,8 +201,14 @@ class VehicleManager(BaseManager):
                       Được gọi từ background thread — caller nên dùng after() nếu cần.
         """
         def _run():
+            import sqlite3 as _sqlite3
+            bg_conn = None
             try:
-                cur = self.conn.cursor()
+                # Mở connection riêng — tránh tranh chấp với self.conn trên main thread
+                bg_conn = _sqlite3.connect(config.DB_FILE, check_same_thread=False)
+                bg_conn.row_factory = _sqlite3.Row
+
+                cur = bg_conn.cursor()
                 cur.execute("""
                     SELECT owner, COUNT(*) as cnt
                     FROM vehicles
@@ -221,8 +228,8 @@ class VehicleManager(BaseManager):
                         callback(changed=False)
                     return
 
-                # Cache miss → normalize
-                self._normalize_all_existing_owners()
+                # Cache miss → normalize (dùng bg_conn độc lập)
+                self._normalize_all_existing_owners(_conn=bg_conn)
 
                 # Tính lại hash sau normalize
                 cur.execute("""
@@ -242,6 +249,12 @@ class VehicleManager(BaseManager):
                 logger.warning(f"start_background_normalization thất bại: {e}")
                 if callback:
                     callback(changed=False)
+            finally:
+                if bg_conn:
+                    try:
+                        bg_conn.close()
+                    except Exception:
+                        pass
 
         threading.Thread(target=_run, daemon=True).start()
 
